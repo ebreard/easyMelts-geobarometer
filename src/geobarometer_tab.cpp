@@ -452,12 +452,15 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
         pmax = 500.0;
     }
 
-    // Plots use their own colour key in a strip on the right, so no legend sits on the data.
+    // No text is drawn inside the plot areas: the colour key, the pressures found and the cursor
+    // position are shown in a strip to the right of each plot, so nothing can cover the data.
     const float plot_h = (ImGui::GetContentRegionAvail().y - 10.f) * 0.5f;
-    const float key_w = 170.f;
+    const float key_w = 190.f;
     const float plot_w = std::max(ImGui::GetContentRegionAvail().x - key_w - 8.f, 200.f);
-    const int plot_flags = ImPlotFlags_Default & ~ImPlotFlags_Legend;
+    const int plot_flags = ImPlotFlags_Default & ~ImPlotFlags_Legend & ~ImPlotFlags_MousePos;
     std::vector<float> xs, ys;
+    bool sat_hovered = false, res_hovered = false;
+    ImVec2 sat_mouse, res_mouse;
 
     ImGui::BeginChild("GbSatPlot", ImVec2(plot_w, plot_h));
     ImGui::SetNextPlotRange((float)pmin - 10.f, (float)pmax + 10.f, (float)tmin - 10.f, (float)tmax + 10.f, refit_plots ? ImGuiCond_Always : ImGuiCond_Once);
@@ -472,6 +475,7 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
             ImGui::PopPlotColor();
         }
         ImGui::PopPlotStyleVar(2);
+        if ((sat_hovered = ImGui::IsPlotHovered())) sat_mouse = ImGui::GetPlotMousePos();
         ImGui::EndPlot();
     }
     ImGui::EndChild();
@@ -479,6 +483,10 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
     ImGui::BeginChild("GbSatKey", ImVec2(key_w, plot_h));
     ImGui::Dummy(ImVec2(0.f, 30.f));
     for (int k = 0; k < 3; ++k) KeyEntry(rs.phases[k].c_str(), kPhaseColor[k]);
+    if (sat_hovered) {
+        ImGui::Dummy(ImVec2(0.f, 8.f));
+        ImGui::Text("cursor: %.0f MPa, %.0f C", sat_mouse.x, sat_mouse.y);
+    }
     ImGui::EndChild();
 
     ImGui::BeginChild("GbResPlot", ImVec2(plot_w, plot_h));
@@ -505,10 +513,19 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
         if (!xs.empty()) ImGui::Plot("fit 2 phases", xs.data(), ys.data(), (int)xs.size());
         ImGui::PopPlotColor();
         ImGui::PopPlotStyleVar();
-        if (r.fit3.estimated)
-            ImGui::PlotLabel(("P3 = " + Num(r.fit3.p_est, "%.1f") + " MPa").c_str(), (float)r.fit3.p_est, (float)std::max(r.fit3.residual_at_p_est, 0.0), false, ImVec2(0.f, -38.f));
-        if (r.fit2.estimated)
-            ImGui::PlotLabel(("P2 = " + Num(r.fit2.p_est, "%.1f") + " MPa").c_str(), (float)r.fit2.p_est, (float)std::max(r.fit2.residual_at_p_est, 0.0), false, ImVec2(0.f, -20.f));
+        // The pressures found: a diamond at each parabola vertex, values listed in the key strip
+        const GeobarometerFit *fits[2] = {&r.fit3, &r.fit2};
+        for (int k = 0; k < 2; ++k) {
+            if (!fits[k]->estimated) continue;
+            float vx = (float)fits[k]->p_est, vy = (float)std::max(fits[k]->residual_at_p_est, 0.0);
+            ImGui::PushPlotColor(ImPlotCol_Line, kResidualColor[2 + k]);
+            ImGui::PushPlotStyleVar(ImPlotStyleVar_Marker, ImMarker_Diamond);
+            ImGui::PushPlotStyleVar(ImPlotStyleVar_MarkerSize, 6.f);
+            ImGui::Plot(k == 0 ? "P3##vertex" : "P2##vertex", &vx, &vy, 1);
+            ImGui::PopPlotStyleVar(2);
+            ImGui::PopPlotColor();
+        }
+        if ((res_hovered = ImGui::IsPlotHovered())) res_mouse = ImGui::GetPlotMousePos();
         ImGui::EndPlot();
     }
     ImGui::EndChild();
@@ -517,6 +534,14 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
     ImGui::Dummy(ImVec2(0.f, 30.f));
     const char *res_names[] = {"delta_3 (3 phases)", "delta_2 (2 phases)", "fit, 3 phases", "fit, 2 phases"};
     for (int k = 0; k < 4; ++k) KeyEntry(res_names[k], kResidualColor[k]);
+    ImGui::Dummy(ImVec2(0.f, 8.f));
+    ImGui::TextColored(kResidualColor[2], "P3 = %s", r.fit3.estimated ? (Num(r.fit3.p_est, "%.1f") + " MPa").c_str() : "none");
+    ImGui::TextColored(kResidualColor[3], "P2 = %s", r.fit2.estimated ? (Num(r.fit2.p_est, "%.1f") + " MPa").c_str() : "none");
+    if (r.fit2.estimated) ImGui::TextWrapped("(%s)", r.fit2.phases_at_min.c_str());
+    if (res_hovered) {
+        ImGui::Dummy(ImVec2(0.f, 8.f));
+        ImGui::Text("cursor: %.0f MPa, %.1f C", res_mouse.x, res_mouse.y);
+    }
     ImGui::EndChild();
     refit_plots = false;
 
