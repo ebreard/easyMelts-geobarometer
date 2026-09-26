@@ -1,6 +1,7 @@
 /*
  easyMelts (c) 2020-2024 Einari Suikkanen
  easyMelts (c) 2025 Paula Antoshechkina
+ Geobarometer tab added September 2026 by Eric C. P. Breard (GPL v3)
 */
 
 #include <algorithm>
@@ -270,6 +271,7 @@ ImGuiOpenGL::ImGuiOpenGL(GLFWwindow *window) {
 }
 
 ImGuiOpenGL::~ImGuiOpenGL() {
+    m_GbCancel = true; // a geobarometer run still going stops at its next step instead of holding up the exit
 }
 
 void ImGuiOpenGL::DestroyAssets() {
@@ -1723,6 +1725,12 @@ void ImGuiOpenGL::UpdateImGUI() {
 
                 ImGui::EndTabItem();
             }
+        }
+
+        if (ImGui::BeginTabItem("Geobarometer", NULL, m_GbSelectTab ? ImGuiTabItemFlags_SetSelected : 0)) {
+            m_GbSelectTab = false;
+            GeobarometerTab(current_melts_version);
+            ImGui::EndTabItem();
         }
 
         if (ImGui::BeginTabItem("Log")) {

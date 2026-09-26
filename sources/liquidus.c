@@ -1,3 +1,4 @@
+/* Modified September 2026 by Eric C. P. Breard: GSL error handler switched off in liquidus(), as in silmin(). */
 const char *liquidus_ver(void) { return "$Id: liquidus.c,v 1.4 2007/12/22 22:43:30 ghiorso Exp $"; }
 /*
 MELTS Source Code: RCS $Log: liquidus.c,v $
@@ -110,6 +111,10 @@ MELTS Source Code: RCS
 #include "status.h"               /*Status of calculation                   */
 #endif
 
+#ifdef EASYMELTS_UPDATE_SYSTEM
+#include <gsl/gsl_errno.h>
+#endif
+
 /*
  *=============================================================================
  * Executable code
@@ -128,6 +133,11 @@ int liquidus(void)
   static int hasSupersaturation, tState = -1;
   static double tInterval;
   int i, j, k, stateChange;
+
+#ifdef EASYMELTS_UPDATE_SYSTEM
+  /* As in silmin(): a singular matrix fails the liquidus search instead of aborting easyMelts */
+  (void) gsl_set_error_handler_off();
+#endif
 
 #ifndef BATCH_VERSION
   WorkProcData *workProcData = (WorkProcData *) client_data;

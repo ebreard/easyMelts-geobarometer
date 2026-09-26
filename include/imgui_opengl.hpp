@@ -1,6 +1,7 @@
 /*
  easyMelts (c) 2020-2024 Einari Suikkanen
  easyMelts (c) 2025 Paula Antoshechkina
+ Geobarometer tab added September 2026 by Eric C. P. Breard (GPL v3)
 */
 
 #ifndef IMGUI_OPENGL_HPP
@@ -10,6 +11,8 @@
 #include "GLFW/glfw3.h"
 #include "imgui/imgui.h"
 #include "melts_interface.hpp"
+#include "geobarometer.hpp"
+#include <atomic>
 #include <vector>
 #include <memory>
 #include <future>
@@ -32,6 +35,7 @@ private:
     GLuint LoadShaders();
     void LoadImGuiTexture();
     void SetupOpenGL();
+    void GeobarometerTab(int melts_version);
 
     std::vector<std::string> melts_files;
 
@@ -76,6 +80,25 @@ private:
 
     ImVec2 m_WindowPos = ImVec2(0,0);
     ImVec2 m_WindowSize = ImVec2(0,0);
+
+    /* Geobarometer tab */
+    GeobarometerSettings m_GbSettings;
+    GeobarometerSettings m_GbRunSettings;
+    std::vector<GeobarometerRun> m_GbRuns;
+    std::future<std::vector<GeobarometerRun>> m_GbFuture;
+    std::atomic<int> m_GbDone{0};
+    std::atomic<bool> m_GbCancel{false};
+    int m_GbTotal = 0;
+    int m_GbSelected = 0;
+    std::vector<std::string> m_GbNames;
+    std::vector<std::array<double, 20>> m_GbComps;
+    std::string m_GbMessage;
+    std::array<bool, 42> m_GbSuppressed{};
+    char m_GbOffsets[128] = "0"; // fO2 offsets as typed, comma separated
+    bool m_GbSelectTab = false; // bring the tab to the front on the next frame
+    bool m_GbAutoRun = false;   // press "Run geobarometer" on the next frame
+
+    friend struct GeobarometerGuiTest;
 
 };
 #endif /* IMUGUI_OPENGL_HPP */

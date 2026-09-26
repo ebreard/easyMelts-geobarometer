@@ -1,3 +1,4 @@
+/* Modified September 2026 by Eric C. P. Breard: declarations for the easyMelts geobarometer (skipOutputFiles, silmin reset). */
 #ifndef _Silmin_h
 #define _Silmin_h
 
@@ -861,7 +862,8 @@ int putSequenceDataToXmlFile(int);
 #ifndef EASYMELTS_UPDATE_SYSTEM
 int silmin(void);
 #else
-int silmin(int calc_index); // Addition -Einari
+int silmin(int calc_index); // Addition -Einari; calc_index < -1 only resets the step machine
+extern int skipOutputFiles; /* non-zero: silmin() writes neither melts.out nor the tables (geobarometer runs) */
 #endif
 
 #define ASSIM_PADB_INDEX_MASS        0  /* + npc + nc */

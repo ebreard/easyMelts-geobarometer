@@ -1,3 +1,4 @@
+/* Modified September 2026 by Eric C. P. Breard for the easyMelts geobarometer: skipOutputFiles switch, and calc_index < -1 resets the step machine. */
 const char *silmin_ver(void) { return "$Id: silmin.c,v 1.12 2009/04/24 20:51:09 ghiorso Exp $"; }
 /*
  MELTS Source Code: RCS $Log: silmin.c,v $
@@ -368,6 +369,10 @@ static void permutation_free(int *p, int n) {
     free(p);
 }
 
+#ifdef EASYMELTS_UPDATE_SYSTEM
+int skipOutputFiles = 0;
+#endif
+
 #ifndef BATCH_VERSION
 Boolean silmin(XtPointer client_data)
 #else
@@ -403,6 +408,9 @@ int silmin(int calc_index)
     static int acceptable = FALSE, bestIter, hessianType = HESSIAN_TYPE_NORMAL;
 
 #ifdef EASYMELTS_UPDATE_SYSTEM
+    /* calc_index < -1: only reset the step machine after an equilibration was abandoned part way,
+       so that the next call (e.g. silmin(-1) in findWetLiquidus) starts a fresh sequence */
+    if (calc_index < -1) { curStep = 0; return TRUE; }
     /*additions, Einari*/
     silminState->ready_to_output = 0;
     if (calc_index == 0) curStep = 0;
@@ -1694,8 +1702,14 @@ int silmin(int calc_index)
 #endif
 
 #ifndef DO_NOT_PRODUCE_OUTPUT_FILES
+#ifdef EASYMELTS_UPDATE_SYSTEM
+            if (!skipOutputFiles) {
+#endif
             (void) putOutputDataToFile((char *) NULL);
             if (additionalOutput != NULL) (*additionalOutput)(addOutputFileName);
+#ifdef EASYMELTS_UPDATE_SYSTEM
+            }
+#endif
 #endif
 
 #ifndef BATCH_VERSION
