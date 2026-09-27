@@ -18,8 +18,7 @@
 
 #include "imgui_opengl.hpp"
 
-static void ReportGlfwError(int code, const char *text) { std::fprintf(stderr, "GLFW error %d: %s
-", code, text); }
+static void ReportGlfwError(int code, const char *text) { std::fprintf(stderr, "GLFW error %d: %s\n", code, text); }
 
 struct GeobarometerGuiTest {
     static int Run(const char *ppm, int width, int height) {
