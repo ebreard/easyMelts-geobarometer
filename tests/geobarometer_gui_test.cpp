@@ -18,8 +18,12 @@
 
 #include "imgui_opengl.hpp"
 
+static void ReportGlfwError(int code, const char *text) { std::fprintf(stderr, "GLFW error %d: %s
+", code, text); }
+
 struct GeobarometerGuiTest {
     static int Run(const char *ppm, int width, int height) {
+        glfwSetErrorCallback(ReportGlfwError);
         if (!glfwInit()) return 2;
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
