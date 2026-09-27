@@ -30,6 +30,14 @@ jobs:
           cmake -S glfw -B glfw/build -DBUILD_SHARED_LIBS=OFF -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF \
                 -DGLFW_BUILD_DOCS=OFF -DCMAKE_INSTALL_PREFIX=$P -DCMAKE_OSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET > /dev/null
           cmake --build glfw/build --target install -j 4 > /dev/null
+          # Test-only GLFW that also accepts Apple's software OpenGL renderer: the hosted Macs have
+          # no GPU OpenGL, and stock GLFW insists on an accelerated pixel format. easyMelts itself
+          # is linked against the stock GLFW above.
+          cp -R glfw glfw_sw && rm -rf glfw_sw/build
+          grep -c "ADD_ATTRIB(NSOpenGLPFAAccelerated);" glfw_sw/src/nsgl_context.m
+          sed -i '' 's/ADD_ATTRIB(NSOpenGLPFAAccelerated);//' glfw_sw/src/nsgl_context.m
+          cmake -S glfw_sw -B glfw_sw/build -DBUILD_SHARED_LIBS=OFF -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF                 -DGLFW_BUILD_DOCS=OFF -DCMAKE_INSTALL_PREFIX=$HOME/deps/glfw_sw -DCMAKE_OSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET > /dev/null
+          cmake --build glfw_sw/build --target install -j 4 > /dev/null
           curl -sL https://ftp.gnu.org/gnu/gsl/gsl-2.8.tar.gz | tar xz
           (cd gsl-2.8 && ./configure --prefix=$P --disable-shared -q && make -j 4 -s > /dev/null && make install -s > /dev/null)
           git clone -q --depth 1 https://github.com/jmcnamara/libxlsxwriter.git
@@ -55,7 +63,7 @@ jobs:
           done
           clang -c -O2 -I./include src/glad.c -o gt/glad.o
           clang++ -O2 -std=c++17 -DGL_SILENCE_DEPRECATION $DEF -I./include -I./includes -I./include/imgui -I$P/include -o geobarometer_gui_test \
-            tests/geobarometer_gui_test.cpp gt/*.o libMELTSbatch.a $P/lib/libglfw3.a $P/lib/libxlsxwriter.a $P/lib/libgsl.a $P/lib/libgslcblas.a \
+            tests/geobarometer_gui_test.cpp gt/*.o libMELTSbatch.a $HOME/deps/glfw_sw/lib/libglfw3.a $P/lib/libxlsxwriter.a $P/lib/libgsl.a $P/lib/libgslcblas.a \
             -lxml2 -lz -liconv $FW
           ls -la easyMelts geobarometer_cli geobarometer_gui_test
           echo "Libraries the release binaries need (all must be system ones):"
@@ -71,6 +79,8 @@ jobs:
 
       - name: GUI smoke test (hidden window)
         timeout-minutes: 20
+        # the Apple silicon runners have no graphics device at all, so OpenGL cannot start there
+        continue-on-error: ${{ matrix.arch == 'arm64' }}
         run: |
           system_profiler SPDisplaysDataType | grep -E "Chipset|Metal|Resolution|Display Type|Vendor" || echo "no display hardware reported"
           cd run && ../geobarometer_gui_test gui_${{ matrix.arch }}.ppm > gui.log 2>&1; status=$?
