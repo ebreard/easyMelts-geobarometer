@@ -70,8 +70,9 @@ jobs:
           python3 ../tests/geobarometer_compare.py mac_detail.csv mac_summary.csv ../tests/geobarometer_reference_bishop_nno_detail.csv
 
       - name: GUI smoke test (hidden window)
+        timeout-minutes: 20
         run: |
-          cd run && timeout 1200 ../geobarometer_gui_test gui_${{ matrix.arch }}.ppm > gui.log 2>&1; status=$?
+          cd run && ../geobarometer_gui_test gui_${{ matrix.arch }}.ppm > gui.log 2>&1; status=$?
           grep -a -E "^frames|^  " gui.log || true; tail -5 gui.log; exit $status
 
       - name: Package
