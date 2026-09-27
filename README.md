@@ -8,7 +8,9 @@ This is not an official easyMelts release, and it is not associated with or endo
 
 **Windows:** download the zip under **Releases**, unzip it and double-click `easyMelts.exe`. The zip also contains `geobarometer_cli.exe` (the same calculation from the command line), the [user guide (PDF)](docs/easyMelts_geobarometer_guide.pdf), a CSV template, the licence and the source patch.
 
-**macOS and Linux:** build from source (below).
+**macOS (14 Sonoma or later):** download `easyMelts_geobarometer_macos_arm64.zip` (Apple silicon: M1, M2, M3...) or `easyMelts_geobarometer_macos_x86_64.zip` (Intel) under **Releases** and unzip it. The app is not signed with an Apple developer certificate, so the first time only run `xattr -dr com.apple.quarantine` on the unzipped folder in Terminal (or use *Open Anyway* in System Settings > Privacy & Security), then double-click `easyMelts.command`. `README-macOS.txt` in the zip gives the details.
+
+**Linux:** build from source (below).
 
 ## Quick start ##
 
@@ -37,7 +39,7 @@ The exact requests that MELTS_Excel (version of 11 August 2025) sends to its MEL
 * the wet liquidus agrees to 0.01 °C except at 25 MPa (0.4 °C). That search repeats an equilibration and a liquidus calculation until two estimates agree within 0.5 °C, so its result depends on its route: started at 930 °C instead of 1100 °C, both programs return 918.87 °C. It only sets where a cooling path starts;
 * for that composition the tab gives 377.3 MPa (quartz and two feldspars) and 372.5 MPa (quartz and the first feldspar).
 
-The Windows and Linux builds give identical results.
+The Windows, Linux and macOS builds give identical results. A GitHub Actions job builds and tests every change on macOS 14 (Apple silicon) and macOS 15 (Intel): the Bishop Tuff case reproduces all 306 saturation temperatures and both pressures, and the tab runs end to end in a hidden window.
 
 ## Speed ##
 
