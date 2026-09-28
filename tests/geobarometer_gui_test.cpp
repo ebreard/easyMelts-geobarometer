@@ -3,12 +3,15 @@
 
  Smoke test of the easyMelts Geobarometer tab: hidden window, the tab brought to the front,
  a run on the Bishop Tuff sample started with the Run button hook, frames drawn until it
- finishes, then the framebuffer written to a PPM file.
+ finishes, then the framebuffer written to a PPM file. Build it with easyMelts's own C++ flags
+ (the Makefile's CPPFLAGS) so that it runs the code that ships; it fails when the Bishop Tuff
+ result is not the validated 377.3 / 372.5 MPa.
 
    geobarometer_gui_test [out.ppm]
 */
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <thread>
 #include <vector>
@@ -87,6 +90,12 @@ struct GeobarometerGuiTest {
             };
             save(ppm);
             report();
+            const bool bishop_ok = !gui.m_GbRuns.empty() && gui.m_GbRuns[0].fit3.estimated && gui.m_GbRuns[0].fit2.estimated &&
+                                   std::fabs(gui.m_GbRuns[0].fit3.p_est - 377.3) < 1.0 && std::fabs(gui.m_GbRuns[0].fit2.p_est - 372.5) < 1.0;
+            if (status == 0 && !bishop_ok) {
+                std::fprintf(stderr, "Bishop Tuff result is not the validated 377.3 / 372.5 MPa\n");
+                status = 6;
+            }
 
             // Second run as in Ruefer et al. (2025): quartz, plagioclase, orthopyroxene at three offsets.
             gui.m_GbSettings.phases = {{"quartz", "feldspar", "orthopyroxene"}};

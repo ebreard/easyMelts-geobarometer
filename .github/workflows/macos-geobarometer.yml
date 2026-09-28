@@ -58,11 +58,13 @@ jobs:
           clang++ -O2 -std=c++17 $DEF -I./include -I./includes -I$P/include -I$SDK/usr/include/libxml2 -o geobarometer_cli \
             tests/geobarometer_cli.cpp src/geobarometer.cpp src/melts_interface.cpp src/e_utility.cpp src/file_utility.cpp \
             libMELTSbatch.a $P/lib/libgsl.a $P/lib/libgslcblas.a -lxml2 -lz -liconv
+          # the GUI test is compiled with easyMelts's own C++ flags (Makefile CPPFLAGS), so it runs the code that ships
+          GUIFL="-std=c++17 -DFMT_HEADER_ONLY -DGL_SILENCE_DEPRECATION -DEASYMELTS_UPDATE_SYSTEM -I./include -I./includes -I./include/imgui -I$P/include -I$B/include"
           mkdir -p gt && for f in e_utility file_utility imgui_demo imgui_draw imgui_input imgui_opengl_melts_version imgui_widgets imgui implot LiberationSans_Regular melts_interface xlsx_writer geobarometer geobarometer_tab; do
-            clang++ -c -O2 -std=c++17 -DFMT_HEADER_ONLY -DGL_SILENCE_DEPRECATION $DEF -I./include -I./includes -I./include/imgui -I$P/include -I$B/include src/$f.cpp -o gt/$f.o
+            clang++ -c $GUIFL src/$f.cpp -o gt/$f.o
           done
-          clang -c -O2 -I./include src/glad.c -o gt/glad.o
-          clang++ -O2 -std=c++17 -DGL_SILENCE_DEPRECATION $DEF -I./include -I./includes -I./include/imgui -I$P/include -o geobarometer_gui_test \
+          clang -c -I./include -DGL_SILENCE_DEPRECATION src/glad.c -o gt/glad.o
+          clang++ $GUIFL -o geobarometer_gui_test \
             tests/geobarometer_gui_test.cpp gt/*.o libMELTSbatch.a $HOME/deps/glfw_sw/lib/libglfw3.a $P/lib/libxlsxwriter.a $P/lib/libgsl.a $P/lib/libgslcblas.a \
             -lxml2 -lz -liconv $FW
           ls -la easyMelts geobarometer_cli geobarometer_gui_test

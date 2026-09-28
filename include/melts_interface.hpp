@@ -1,6 +1,7 @@
 /*
  easyMelts (c) 2020-2024 Einari Suikkanen
  easyMelts (c) 2025 Paula Antoshechkina
+ RHYOLITE_ADJUSTMENTS define added 28 September 2026 by Eric C. P. Breard (GPL v3)
 */
 
 #ifndef MELTS_INTERFACE_HPP
@@ -12,6 +13,13 @@
 
 #ifndef EASYMELTS_UPDATE_SYSTEM
 #define EASYMELTS_UPDATE_SYSTEM
+#endif
+
+// The MELTS library is built with RHYOLITE_ADJUSTMENTS (Makefile.common), and melts_interface.cpp
+// compiles its own copy of the solid-phase tables (sol_struct_data.h) that InitializeMelts installs
+// as the model. Without the same define here that copy lacks the rhyolite-MELTS sanidine adjustment.
+#ifndef RHYOLITE_ADJUSTMENTS
+#define RHYOLITE_ADJUSTMENTS
 #endif
 
 #include <array>
