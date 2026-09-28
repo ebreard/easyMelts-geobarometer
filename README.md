@@ -6,6 +6,8 @@ This is not an official easyMelts release, and it is not associated with or endo
 
 ## Download ##
 
+**Use release v0.3.0-geobarometer.2 or later.** In v0.3.0-geobarometer.1 the easyMelts window ran rhyolite-MELTS without its adjustment to sanidine and gave wrong saturation temperatures (for the Bishop Tuff sample it found no pressure instead of 377.3 / 372.5 MPa); the command-line tool was right.
+
 **Windows:** download the zip under **Releases**, unzip it and double-click `easyMelts.exe`. The zip also contains `geobarometer_cli.exe` (the same calculation from the command line), the [user guide (PDF)](docs/easyMelts_geobarometer_guide.pdf), a CSV template, the licence and the source patch.
 
 **macOS (14 Sonoma or later):** download `easyMelts_geobarometer_macos_arm64.zip` (Apple silicon: M1, M2, M3...) or `easyMelts_geobarometer_macos_x86_64.zip` (Intel) under **Releases** and unzip it. The app is not signed with an Apple developer certificate, so the first time only run `xattr -dr com.apple.quarantine` on the unzipped folder in Terminal (or use *Open Anyway* in System Settings > Privacy & Security), then double-click `easyMelts.command`. `README-macOS.txt` in the zip gives the details.
@@ -20,6 +22,10 @@ This is not an official easyMelts release, and it is not associated with or endo
 4. Click a row of the results table to see the saturation curves and the residuals, and use **Export CSV** to save them.
 
 To run many glasses at once, choose *CSV file (batch)* and load a CSV file with one row per composition and a header of oxide names (`Sample, SiO2, TiO2, Al2O3, FeO, MnO, MgO, CaO, Na2O, K2O, P2O5, H2O`). The [user guide](docs/easyMelts_geobarometer_guide.pdf) describes every setting and output, and [GEOBAROMETER.md](GEOBAROMETER.md) gives the technical notes.
+
+## Reproducing a MELTS_Excel run ##
+
+The `init_cond` sheet of a MELTS_Excel workbook holds everything the tab needs: the model (`MELTS_v1.0.x` for rhyolite-MELTS_v1.0.x), the composition with its H2O, T1, T2 and T step (the temperature grid), P1, P2 and P step (the pressure grid), and the fO2 buffer and value (buffer and offset). With those, the tab reproduces the workbook's `Phase_Data` saturation temperatures and its `P_Calc` pressures, which use quartz, feldspar1 and feldspar2 with *any two phases*, the tab's defaults. If the pressures were worked out with other phases or with *require phase 1*, for example feldspar1, quartz and orthopyroxene, enter the phases in the same order: under *require phase 1* the two-phase residual always involves phase 1, so the order changes the two-phase pressure (the three-phase pressure does not depend on it).
 
 ## What is calculated ##
 
@@ -39,7 +45,9 @@ The exact requests that MELTS_Excel (version of 11 August 2025) sends to its MEL
 * the wet liquidus agrees to 0.01 °C except at 25 MPa (0.4 °C). That search repeats an equilibration and a liquidus calculation until two estimates agree within 0.5 °C, so its result depends on its route: started at 930 °C instead of 1100 °C, both programs return 918.87 °C. It only sets where a cooling path starts;
 * for that composition the tab gives 377.3 MPa (quartz and two feldspars) and 372.5 MPa (quartz and the first feldspar).
 
-The Windows, Linux and macOS builds give identical results. A GitHub Actions job builds and tests every change on macOS 14 (Apple silicon) and macOS 15 (Intel): the Bishop Tuff case reproduces all 306 saturation temperatures and both pressures, and the tab runs end to end in a hidden window.
+The Windows, Linux and macOS builds give identical results. The Geobarometer tab gives the same tables as the command-line tool: runs replayed through the tab on Windows match it value for value, and a test of the tab compiled exactly like the released program checks the Bishop Tuff result on every change. A GitHub Actions job builds and tests every change on macOS 14 (Apple silicon) and macOS 15 (Intel): the Bishop Tuff case reproduces all 306 saturation temperatures and both pressures, and the tab runs end to end in a hidden window.
+
+Up to v0.3.0-geobarometer.1, easyMelts compiled its own copy of the MELTS solid-phase tables (in `melts_interface.cpp`) without `RHYOLITE_ADJUSTMENTS`, the switch the MELTS library is built with, so the window ran rhyolite-MELTS without the sanidine adjustment. The switch is now set in `melts_interface.hpp`; the upstream makefiles compile the C++ sources without it.
 
 ## Speed ##
 

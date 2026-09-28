@@ -6,6 +6,8 @@ at its liquidus, in the phases you choose (quartz + two feldspars, plagioclase +
 + quartz, and so on). It runs locally with the same rhyolite-MELTS 1.0.x engine, so no
 internet connection and no Excel are needed.
 
+**Use release v0.3.0-geobarometer.2 or later.** In v0.3.0-geobarometer.1 the easyMelts window ran rhyolite-MELTS without its adjustment to sanidine and gave wrong saturation temperatures (for the Bishop Tuff sample it found no pressure instead of 377.3 / 372.5 MPa); the command-line tool was right.
+
 ## Quick start
 
 1. `Init > Version > MELTS_v1.0.x` (the published geobarometer uses rhyolite-MELTS 1.0.x).
@@ -45,6 +47,10 @@ as in MELTS_Excel; `plagioclase` / `sanidine` split feldspar at 25 mol% sanidine
 (the MELTS_Excel rule). `orthopyroxene`, `clinopyroxene`, `spinel`, `rhm-oxide` and every
 other MELTS phase can be chosen too.
 
+### Reproducing a MELTS_Excel run
+
+The `init_cond` sheet of a MELTS_Excel workbook holds everything the tab needs: the model (`MELTS_v1.0.x` for rhyolite-MELTS_v1.0.x), the composition with its H2O, T1, T2 and T step (the temperature grid), P1, P2 and P step (the pressure grid), and the fO2 buffer and value (buffer and offset). With those, the tab reproduces the workbook's `Phase_Data` saturation temperatures and its `P_Calc` pressures, which use quartz, feldspar1 and feldspar2 with *any two phases*, the tab's defaults. If the pressures were worked out with other phases or with *require phase 1*, for example feldspar1, quartz and orthopyroxene, enter the phases in the same order: under *require phase 1* the two-phase residual always involves phase 1, so the order changes the two-phase pressure (the three-phase pressure does not depend on it).
+
 *Stop each path once the three phases have appeared* (on by default) ends each cooling path as
 soon as the three phases are present. It cannot change any result, because only the highest
 temperature at which each phase appears is used; untick it to follow every path to the end.
@@ -69,6 +75,8 @@ with this tab:
 * pressures from this tab for that composition: 377.3 MPa (quartz + 2 feldspars) and
   372.5 MPa (quartz + feldspar1).
 
+The Geobarometer tab gives the same tables as the command-line tool: runs replayed through the tab on Windows match it value for value, and a test of the tab compiled exactly like the released program checks the Bishop Tuff result on every change.
+
 Two of about 1,400 web-service requests timed out even after MELTS_Excel's 20 s retry. The
 local calculation does not depend on a server.
 
@@ -90,6 +98,8 @@ matrix during a liquidus search called GSL's default handler, which aborts the p
 handled as in `silmin()`); a wet-liquidus search after an interrupted equilibration resumed a
 stale step and crashed (the step counter is now reset); and a loop bound in
 `InitComputeDataStruct` read one element past the phase table.
+
+Up to v0.3.0-geobarometer.1, easyMelts compiled its own copy of the MELTS solid-phase tables (in `melts_interface.cpp`) without `RHYOLITE_ADJUSTMENTS`, the switch the MELTS library is built with, so the window ran rhyolite-MELTS without the sanidine adjustment. The switch is now set in `melts_interface.hpp`; the upstream makefiles compile the C++ sources without it.
 
 ## Command-line version
 
