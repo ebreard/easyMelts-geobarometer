@@ -1,3 +1,4 @@
+/* Modified September 2026 by Eric C. P. Breard: muO2 may be NULL (gradient requested alone) when the buffering reaction cannot be found. */
 const char *subSolidusMuO2_ver(void) { return "$Id: subSolidusMuO2.c,v 1.4 2007/11/29 05:32:14 ghiorso Exp $"; }
 /*
 MELTS Source Code: RCS $Log: subSolidusMuO2.c,v $
@@ -201,7 +202,7 @@ int subsolidusmuO2(int mask,
     for (i=0, n=1; i<npc; i++) n += silminState->nSolidCoexist[i]*solids[i].na;
     if (n == 1) {
       vector_free(m, nlc); vector_free(r, nlc); vector_free(activities, nlc);
-      *muO2 = 0.0;
+      if (muO2 != NULL) *muO2 = 0.0;
       return TRUE;
     }
 
@@ -307,7 +308,7 @@ int subsolidusmuO2(int mask,
                 for (j=0; j<n; j++) dstoich[j] /= -dstoich[0];
             } else {
                 printf("Failed to find buffering reaction\n");
-                *muO2 = 0.0;
+                if (muO2 != NULL) *muO2 = 0.0;
 
                 free(RHS); matrix_free(stMatrix, mm, n); vector_free(dstoich, n);
                 free(oxide); free(phaseIndex); free(nCoexist);
@@ -321,7 +322,7 @@ int subsolidusmuO2(int mask,
             gsl_matrix_free(V); gsl_vector_free(S);
         } else {
             printf("Can't compute fO2 without FEO and FE2O3\n");
-            *muO2 = 0.0;
+            if (muO2 != NULL) *muO2 = 0.0;
 
             free(RHS); matrix_free(stMatrix, mm, n); vector_free(dstoich, n);
             free(oxide); free(phaseIndex); free(nCoexist);

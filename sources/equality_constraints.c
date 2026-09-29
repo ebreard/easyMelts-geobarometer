@@ -1,3 +1,4 @@
+/* Modified September 2026 by Eric C. P. Breard: liquid components of oxides absent from the bulk composition are zeroed before the constraint matrix is sized, and the fO2 buffer is removed when FeO or Fe2O3 is absent from the bulk. */
 const char *equality_constraints_ver(void) { return "$Id: equality_constraints.c,v 1.5 2007/06/08 17:25:42 ghiorso Exp $"; }
 /*
 MELTS Source Code: RCS $Log: equality_constraints.c,v $
@@ -216,6 +217,27 @@ void getEqualityConstraints(int *conRows, int *conCols, double ***cMatrixPt,
      exit(1);
   }
 
+  /* The buffer acts through FeO and Fe2O3 together (their rows are combined below and the fO2 row takes
+     the row freed). With either absent from the bulk, e.g. once the liquid has been dropped and no phase
+     holds ferric iron, it cannot be imposed, so it is removed, as linear_search() does when the
+     subsolidus buffering reaction fails. */
+  if ((silminState->fo2Path != FO2_NONE)
+      && ((silminState->bulkComp)[indFeO] == 0.0 || (silminState->bulkComp)[indFe2O3] == 0.0)) {
+    printf("FeO or Fe2O3 absent from the bulk composition.  Removing buffer constraint.\n");
+    silminState->fo2Path = FO2_NONE;
+  }
+
+  /* A liquid component that needs an oxide absent from the bulk composition can hold round-off
+     (e.g. 1e-22 mol Mg2SiO4 in a MgO-free melt with garnet). The liquid gets one column per oxide
+     present below, but every non-zero component is written into cMatrix, so such a component
+     would write past the end of each row. It is set to zero. */
+  if (hasLiquid) for (nl=0; nl<silminState->nLiquidCoexist; nl++) for (j=0; j<nlc; j++)
+    if ((silminState->liquidComp)[nl][j] != 0.0) for (i=0; i<nc; i++)
+      if ((silminState->bulkComp)[i] == 0.0 && (liquid[j].liqToOx)[i] != 0.0) {
+        (silminState->liquidComp)[nl][j] = 0.0;
+        break;
+      }
+
   /* count rows (number of constraints) and columns (number of variables) */
   for (i=0, rows=0; i<nc; i++) if ((silminState->bulkComp)[i] != 0.0) rows++; /* was > */
   for (i=0, cols=(hasLiquid ? rows*silminState->nLiquidCoexist : 0); i<npc; i++) if ((ns = (silminState->nSolidCoexist)[i]) > 0) {
@@ -321,7 +343,7 @@ void getEqualityConstraints(int *conRows, int *conCols, double ***cMatrixPt,
 	blockIndex = j;
     	free(gradO2);
       } else {
-    	double *gradO2 = (double *) malloc((unsigned) cols*sizeof(double));
+    	double *gradO2 = (double *) calloc((size_t) cols, sizeof(double)); /* zero if no buffering reaction is found */
     	subsolidusmuO2(SECOND, NULL, gradO2, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
     	for (j=0;j<(cols-((isentropic||isenthalpic)?1:0)-(isochoric?1:0));j++) cMatrix[k][j] = gradO2[j];
     	for (i=j; i<cols; i++) cMatrix[k][i] = 0.0;
