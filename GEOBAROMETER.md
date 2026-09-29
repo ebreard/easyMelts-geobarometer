@@ -65,10 +65,12 @@ temperature at which each phase appears is used; untick it to follow every path 
 
 The summary notes flag pressures where the wet-liquidus search failed (the path then starts at
 the top of the temperature grid, as in MELTS_Excel), where MELTS failed part way down, or where
-a chosen phase was already present at the first step. A composition with a negative oxide (a
-Monte Carlo draw below zero, for example), or with an fO2 buffer but no FeO and no Fe2O3, is not
-calculated, and its row says why; a composition that gives no result at any pressure quotes the
-first failure.
+a chosen phase was already present at the first step. MELTS cannot use a negative amount of an
+oxide (a Monte Carlo draw below zero, for example), so it counts as 0 and the row says so;
+`negative=skip` on the command line, or unticking *Count negative oxide values as 0* in the tab,
+leaves such a composition out instead. A composition with an fO2 buffer but no FeO and no Fe2O3 is
+not calculated, and its row says why; a composition that gives no result at any pressure quotes
+the first failure.
 
 Each summary row also gives, for each parabola, the pressure range of the points it was fitted to
 (`fit_P_min_3phase_MPa`, `fit_P_max_3phase_MPa`, and the same for `2phase`) and its coefficients
@@ -127,7 +129,7 @@ Up to v0.3.0-geobarometer.1, easyMelts compiled its own copy of the MELTS solid-
 
 Keys: `version`, `p_start`, `p_end`, `p_step`, `t_start`, `t_end`, `t_step`, `buffer`
 (none, hm, nno, qfm, coh, iw), `offsets`, `phases`, `rule` (any or phase1), `threshold`,
-`h2o`, `suppress`, `stop`, `quiet`, `step_timeout`, `out`, `jobs`.
+`h2o`, `suppress`, `stop`, `negative`, `quiet`, `step_timeout`, `out`, `jobs`.
 
 ## Source code and licence
 
