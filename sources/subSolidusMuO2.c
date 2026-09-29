@@ -1,4 +1,4 @@
-/* Modified September 2026 by Eric C. P. Breard: muO2 may be NULL (gradient requested alone) when the buffering reaction cannot be found. */
+/* Modified September 2026 by Eric C. P. Breard: muO2 may be NULL (gradient requested alone) when the buffering reaction cannot be found, and the buffering iteration gives up when its step is not finite or after 1000 iterations. */
 const char *subSolidusMuO2_ver(void) { return "$Id: subSolidusMuO2.c,v 1.4 2007/11/29 05:32:14 ghiorso Exp $"; }
 /*
 MELTS Source Code: RCS $Log: subSolidusMuO2.c,v $
@@ -404,6 +404,15 @@ int subsolidusmuO2(int mask,
 	        if (error0 != (tempmuO2-*muO2)) fudge *= error0/(error0 - tempmuO2 + *muO2);
         }
 	      iter++;
+        /* The halving below cannot shrink a step that is not finite, and nothing else bounds this
+           iteration: give up as when no legal step is left, and the caller removes the buffer. */
+        if (!isfinite(xi) || iter > 1000) {
+          printf("No convergence in subSolidusMuO2 (iteration %d, step %g, error %g). Exiting.\n", iter, xi, tempmuO2 - *muO2);
+          free(a); free(g0);
+          vector_free(dstoich, n); free(oxide); free(phaseIndex); free(nCoexist);
+          vector_free(m, nlc); vector_free(r, nlc); vector_free(activities, nlc);
+          return FALSE;
+        }
         while (acceptable == FALSE) {
           acceptable = TRUE;
           if ((molesO2 -= xi) < 0.0) {
