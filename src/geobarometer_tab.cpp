@@ -404,6 +404,16 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
                              : "Could not write " + base + "_summary.csv";
         }
         ImGui::SameLine();
+        if (ImGui::Button("Export Excel")) {
+            const std::string base(out_buf[0] ? out_buf : "geobarometer");
+            std::string err;
+            const bool ok = Geobarometer::WriteSummaryCSV(base + "_summary.csv", m_GbRunSettings, m_GbRuns) &&
+                            Geobarometer::WriteDetailCSV(base + "_detail.csv", m_GbRunSettings, m_GbRuns) &&
+                            Geobarometer::WriteWorkbook(base + "_summary.csv", base + "_detail.csv", base + ".xlsx", err);
+            m_GbMessage = ok ? "Saved " + base + ".xlsx (and the two CSV files) in the easyMelts folder: pick a run in its Viewer sheet"
+                             : "Could not write " + base + ".xlsx" + (err.empty() ? "" : ": " + err);
+        }
+        ImGui::SameLine();
         Help("summary: one row per composition and fO2 offset (pressures, smallest residuals, the pressure range and "
              "coefficients of each fitted parabola, phases). detail: saturation temperatures and residuals at every "
              "pressure, the fitted parabolas at the pressures they were fitted to, plus every phase that appeared.");
@@ -423,15 +433,15 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
 
     const float table_h = std::min(ImGui::GetWindowHeight() * 0.3f, 60.f + 22.f * (float)m_GbRuns.size());
     ImGui::BeginChild("GbTable", ImVec2(0, table_h), true);
-    ImGui::Columns(8, "gbcols");
+    ImGui::Columns(9, "gbcols");
     static bool widths_set = false;
     if (!widths_set) {
         const float tw = ImGui::GetWindowContentRegionWidth();
-        const float frac[8] = {0.15f, 0.08f, 0.09f, 0.09f, 0.09f, 0.09f, 0.23f, 0.18f};
-        for (int c = 0; c < 8; ++c) ImGui::SetColumnWidth(c, tw * frac[c]);
+        const float frac[9] = {0.14f, 0.07f, 0.08f, 0.08f, 0.08f, 0.08f, 0.19f, 0.10f, 0.18f};
+        for (int c = 0; c < 9; ++c) ImGui::SetColumnWidth(c, tw * frac[c]);
         widths_set = true;
     }
-    const char *heads[] = {"sample", "fO2 offset", "P3 (MPa)", "min dT3 (C)", "P2 (MPa)", "min dT2 (C)", "2-phase pair", "notes"};
+    const char *heads[] = {"sample", "fO2 offset", "P3 (MPa)", "min dT3 (C)", "P2 (MPa)", "min dT2 (C)", "2-phase pair", "flags", "notes"};
     for (const char *h : heads) {
         ImGui::Text("%s", h);
         ImGui::NextColumn();
@@ -456,6 +466,18 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
         ImGui::Text("%s", Num(r.fit2.min_residual, "%.1f").c_str());
         ImGui::NextColumn();
         ImGui::Text("%s", r.fit2.phases_at_min.c_str());
+        ImGui::NextColumn();
+        // screening flags: how many, and what they say on hover
+        const size_t nf3 = r.fit3.flags.size(), nf2 = r.fit2.flags.size();
+        std::string fcell = (nf3 ? "P3 " + std::to_string(nf3) : std::string()) + (nf3 && nf2 ? ", " : "") +
+                            (nf2 ? "P2 " + std::to_string(nf2) : std::string());
+        ImGui::Text("%s", fcell.c_str());
+        if (!fcell.empty() && ImGui::IsItemHovered()) {
+            std::string tip;
+            for (const auto &x : r.fit3.flags) tip += "P3: " + x + "\n";
+            for (const auto &x : r.fit2.flags) tip += "P2: " + x + "\n";
+            ImGui::SetTooltip("%s", tip.c_str());
+        }
         ImGui::NextColumn();
         int notes = 0;
         for (const auto &n : r.note)
@@ -583,6 +605,8 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
     ImGui::TextColored(kResidualColor[2], "P3 = %s", r.fit3.estimated ? (Num(r.fit3.p_est, "%.1f") + " MPa").c_str() : "none");
     ImGui::TextColored(kResidualColor[3], "P2 = %s", r.fit2.estimated ? (Num(r.fit2.p_est, "%.1f") + " MPa").c_str() : "none");
     if (r.fit2.estimated) ImGui::TextWrapped("(%s)", r.fit2.phases_at_min.c_str());
+    for (const auto &x : r.fit3.flags) ImGui::TextWrapped("P3: %s", x.c_str());
+    for (const auto &x : r.fit2.flags) ImGui::TextWrapped("P2: %s", x.c_str());
     if (res_hovered) {
         ImGui::Dummy(ImVec2(0.f, 8.f));
         ImGui::Text("cursor: %.0f MPa, %.1f C", res_mouse.x, res_mouse.y);

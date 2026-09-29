@@ -294,6 +294,75 @@ double Value(const std::array<double, 3> &v, int i) {
     return std::isfinite(v[i]) ? v[i] : 0.0;
 }
 
+// Mineral a recorded phase name belongs to: numbered instances ("feldspar2") and the feldspar
+// labels (plagioclase, sanidine) are the same MELTS phase.
+std::string PhaseGroup(std::string name) {
+    while (!name.empty() && std::isdigit((unsigned char)name.back())) name.pop_back();
+    if (name == "plagioclase" || name == "sanidine") return "feldspar";
+    return name;
+}
+
+// Screening of an estimated pressure (members: the chosen phases that give it):
+//  - the smallest residual at the first or last pressure with a result, a fit on fewer than five
+//    points, or a vertex outside the fitted points: the minimum may lie beyond the pressures used;
+//  - at the pressure of the minimum, a phase that saturates more than the threshold above the phases
+//    that give the pressure: they are then not the first to crystallise from the melt. The fluid is
+//    left out, and a recorded name that is one of the chosen phases under another label is too.
+void Screen(const GeobarometerSettings &s, const GeobarometerRun &run, const std::vector<int> &members, GeobarometerFit &f) {
+    f.flags.clear();
+    if (!f.estimated || f.index_lo < 0) return;
+    const int n = (int)run.pressure.size(), i = f.index_at_min;
+    if (i == 0 || i == n - 1) f.flags.push_back("minimum at the end of the pressure range");
+    else if (f.n_fit < 5) f.flags.push_back("fit on " + std::to_string(f.n_fit) + " points");
+    const double lo = std::min(run.pressure[f.index_lo], run.pressure[f.index_hi]);
+    const double hi = std::max(run.pressure[f.index_lo], run.pressure[f.index_hi]);
+    if (f.p_est < lo || f.p_est > hi)
+        f.flags.push_back("vertex outside the fitted points (" + Fmt(lo, 0) + "-" + Fmt(hi, 0) + " MPa)");
+    // a residual taken with a phase absent: under 'require phase 1' an absent temperature counts as 0,
+    // as a blank cell does in MELTS_Excel, so a pressure where none of the phases appeared has residual 0
+    for (int j = f.index_lo; j <= f.index_hi; ++j) {
+        std::string absent;
+        for (int m : members)
+            if (!std::isfinite(run.tsat[j][m])) absent += (absent.empty() ? "" : ", ") + s.phases[m];
+        if (!absent.empty())
+            f.flags.push_back(absent + " absent at " + Fmt(run.pressure[j], 0) + " MPa" + (j == i ? " (the minimum)" : " (a fitted point)"));
+    }
+
+    double top = -std::numeric_limits<double>::infinity();
+    for (int m : members)
+        if (std::isfinite(run.tsat[i][m])) top = std::max(top, run.tsat[i][m]);
+    if (!std::isfinite(top)) return;
+    std::vector<std::pair<double, std::string>> first; // (temperature, name), phases above the threshold
+    std::vector<std::pair<std::string, double>> chosen;
+    for (int k = 0; k < 3; ++k) {
+        const double t = run.tsat[i][k];
+        if (!std::isfinite(t)) continue;
+        chosen.push_back({PhaseGroup(s.phases[k]), t});
+        if (std::find(members.begin(), members.end(), k) == members.end() && t > top + s.threshold)
+            first.push_back({t, s.phases[k]});
+    }
+    std::map<std::pair<std::string, double>, std::string> others; // one entry per phase: (mineral, temperature)
+    auto rank = [](const std::string &name) {
+        if (name == "plagioclase" || name == "sanidine") return 0;
+        return std::isdigit((unsigned char)name.back()) ? 2 : 1;
+    };
+    for (const auto &kv : run.all_tsat) {
+        if (kv.first.empty() || i >= (int)kv.second.size()) continue;
+        const double t = kv.second[i];
+        const std::string g = PhaseGroup(kv.first);
+        if (!std::isfinite(t) || !(t > top + s.threshold) || g == "water" || g == "fluid") continue;
+        bool is_chosen = false;
+        for (const auto &c : chosen)
+            if (c.first == g && std::fabs(c.second - t) < 1e-6) is_chosen = true;
+        if (is_chosen) continue;
+        auto it = others.find({g, t});
+        if (it == others.end() || rank(kv.first) < rank(it->second)) others[{g, t}] = kv.first;
+    }
+    for (const auto &o : others) first.push_back({o.first.second, o.second});
+    std::sort(first.begin(), first.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+    for (const auto &p : first) f.flags.push_back(p.second + " first (+" + Fmt(p.first - top, 0) + " C)");
+}
+
 } // namespace
 
 namespace Geobarometer {
@@ -426,18 +495,21 @@ void Evaluate(const GeobarometerSettings &s, GeobarometerRun &run) {
     run.fit2 = FitResidual(run.pressure, run.delta2, s.threshold);
     if (run.fit3.index_at_min >= 0)
         run.fit3.phases_at_min = s.phases[0] + " + " + s.phases[1] + " + " + s.phases[2];
+    std::vector<int> pair;
     if (run.fit2.index_at_min >= 0) {
         const auto &v = run.tsat[run.fit2.index_at_min];
         if (s.require_phase1) {
             int other = Value(v, 1) >= Value(v, 2) ? 1 : 2;
-            run.fit2.phases_at_min = s.phases[0] + " + " + s.phases[other];
+            pair = {0, other};
         } else {
             std::array<int, 3> idx{{0, 1, 2}};
             std::stable_sort(idx.begin(), idx.end(), [&](int a, int b) { return Value(v, a) > Value(v, b); });
-            int first = std::min(idx[0], idx[1]), second = std::max(idx[0], idx[1]);
-            run.fit2.phases_at_min = s.phases[first] + " + " + s.phases[second];
+            pair = {std::min(idx[0], idx[1]), std::max(idx[0], idx[1])};
         }
+        run.fit2.phases_at_min = s.phases[pair[0]] + " + " + s.phases[pair[1]];
     }
+    Screen(s, run, {0, 1, 2}, run.fit3);
+    Screen(s, run, pair, run.fit2);
 }
 
 GeobarometerFit FitResidual(const std::vector<double> &p, const std::vector<double> &r, double threshold) {
@@ -795,9 +867,9 @@ namespace {
 
 void SummaryHeader(std::ostream &o) {
     o << "sample,fO2_offset,P_3phase_MPa,min_dT_3phase_C,P_at_min_3phase_MPa,points_3phase,"
-         "fit_P_min_3phase_MPa,fit_P_max_3phase_MPa,fit_a_3phase,fit_b_3phase,fit_c_3phase,"
+         "fit_P_min_3phase_MPa,fit_P_max_3phase_MPa,fit_a_3phase,fit_b_3phase,fit_c_3phase,flags_3phase,"
          "P_2phase_MPa,min_dT_2phase_C,P_at_min_2phase_MPa,points_2phase,phases_2phase,"
-         "fit_P_min_2phase_MPa,fit_P_max_2phase_MPa,fit_a_2phase,fit_b_2phase,fit_c_2phase,"
+         "fit_P_min_2phase_MPa,fit_P_max_2phase_MPa,fit_a_2phase,fit_b_2phase,fit_c_2phase,flags_2phase,"
          "phase1,phase2,phase3,two_phase_rule,threshold_C,"
          "P_start_MPa,P_end_MPa,P_step_MPa,T_start_C,T_end_C,T_step_C,fO2_buffer,equilibrations,notes\n";
 }
@@ -809,17 +881,15 @@ void SummaryRows(std::ostream &o, const std::vector<GeobarometerRun> &runs) {
         for (size_t i = 0; i < r.note.size(); ++i)
             if (!r.note[i].empty()) notes += std::string(notes.empty() ? "" : " | ") + Fmt(r.pressure[i], 0) + " MPa: " + r.note[i];
         if (r.cancelled) notes = "stopped by user" + std::string(notes.empty() ? "" : " | ") + notes;
-        if (r.fit2.estimated && r.fit2.index_lo >= 0) {
-            const double lo = std::min(r.pressure[r.fit2.index_lo], r.pressure[r.fit2.index_hi]);
-            const double hi = std::max(r.pressure[r.fit2.index_lo], r.pressure[r.fit2.index_hi]);
-            if (r.fit2.p_est < lo || r.fit2.p_est > hi) notes += std::string(notes.empty() ? "" : " | ") + "2-phase vertex outside the fitted points";
-        }
         // pressure range of the points each parabola was fitted to, and its coefficients
         // (residual in C = a P^2 + b P + c, P in MPa), so that every curve can be redrawn
         auto fit_columns = [&](const GeobarometerFit &f) {
-            if (!std::isfinite(f.a) || f.index_lo < 0) return std::string(",,,,");
+            std::string flags;
+            for (const auto &x : f.flags) flags += (flags.empty() ? "" : "; ") + x;
+            if (!std::isfinite(f.a) || f.index_lo < 0) return std::string(",,,,,") + Quote(flags);
             const double p1 = r.pressure[f.index_lo], p2 = r.pressure[f.index_hi];
-            return Csv(std::min(p1, p2), 1) + "," + Csv(std::max(p1, p2), 1) + "," + CsvSig(f.a) + "," + CsvSig(f.b) + "," + CsvSig(f.c);
+            return Csv(std::min(p1, p2), 1) + "," + Csv(std::max(p1, p2), 1) + "," + CsvSig(f.a) + "," + CsvSig(f.b) + "," +
+                   CsvSig(f.c) + "," + Quote(flags);
         };
         o << Quote(r.sample) << "," << Csv(r.fo2_offset, 3) << ","
           << (r.fit3.estimated ? Csv(r.fit3.p_est, 1) : "") << "," << Csv(r.fit3.min_residual, 2) << ","

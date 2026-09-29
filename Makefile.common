@@ -698,7 +698,7 @@ easyMelts: interface.c lawson_hanson.h liq_struct_data.h melts_gsl.h nash.h silm
 
 easyMelts-private: _main.cpp e_utility.cpp file_utility.cpp glad.c imgui_demo.cpp imgui_draw.cpp imgui_input.cpp \
 		   imgui_opengl_melts_version.cpp imgui_widgets.cpp imgui.cpp implot.cpp LiberationSans_Regular.cpp \
-		   melts_interface.cpp xlsx_writer.cpp geobarometer.cpp geobarometer_tab.cpp $(MELTSBATCHLIB)
+		   melts_interface.cpp xlsx_writer.cpp geobarometer.cpp geobarometer_tab.cpp geobarometer_xlsx.cpp $(MELTSBATCHLIB)
 	$(RANLIB) $(RANLIBFG) $(MELTSBATCHLIB)
 	$(CC) -c -I./include -DGL_SILENCE_DEPRECATION src/glad.c
 	$(CPP) $(CPPFLAGS) src/_main.cpp
@@ -716,11 +716,12 @@ easyMelts-private: _main.cpp e_utility.cpp file_utility.cpp glad.c imgui_demo.cp
 	$(CPP) $(CPPFLAGS) src/xlsx_writer.cpp
 	$(CPP) $(CPPFLAGS) src/geobarometer.cpp
 	$(CPP) $(CPPFLAGS) src/geobarometer_tab.cpp
+	$(CPP) $(CPPFLAGS) src/geobarometer_xlsx.cpp
 	$(CPP) $(LDFLAGS) -o easyMelts _main.o e_utility.o file_utility.o glad.o imgui_demo.o imgui_draw.o imgui_input.o \
-			imgui_opengl_melts_version.o imgui_widgets.o imgui.o implot.o LiberationSans_Regular.o melts_interface.o xlsx_writer.o geobarometer.o geobarometer_tab.o \
+			imgui_opengl_melts_version.o imgui_widgets.o imgui.o implot.o LiberationSans_Regular.o melts_interface.o xlsx_writer.o geobarometer.o geobarometer_tab.o geobarometer_xlsx.o \
 	        $(MELTSBATCHLIB) $(PUBLIBS) $(LIBBATCH)
 	$(RM) $(RMFLAGS) _main.o e_utility.o file_utility.o glad.o imgui_demo.o imgui_draw.o imgui_input.o \
-			imgui_opengl_melts_version.o imgui_widgets.o imgui.o implot.o LiberationSans_Regular.o melts_interface.o xlsx_writer.o geobarometer.o geobarometer_tab.o
+			imgui_opengl_melts_version.o imgui_widgets.o imgui.o implot.o LiberationSans_Regular.o melts_interface.o xlsx_writer.o geobarometer.o geobarometer_tab.o geobarometer_xlsx.o
 	chmod 755 easyMelts
 
 Melts-batch: interface.c lawson_hanson.h liq_struct_data.h melts_gsl.h nash.h silmin.h status.h param_struct_data.h \

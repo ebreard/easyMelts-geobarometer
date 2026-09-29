@@ -11,6 +11,7 @@
        rule (any|phase1), threshold (C), h2o (g added when the file has no H2O),
        suppress (comma list, default amphibole,biotite), stop (1|0), out (file prefix),
        negative (zero|skip: a negative oxide amount counts as 0, or the composition is not calculated),
+       xlsx (1: also write <out>.xlsx, an Excel workbook with a run viewer and charts),
        jobs (run the file in that many parts at once, one per processor core, and join the results)
 
  Rows of the CSV file can override the grid, fO2, phases, rule and threshold in their own columns
@@ -156,20 +157,47 @@ static int RunInParts(const char *self, const std::string &file, int jobs, const
 int main(int argc, char **argv) {
     std::map<std::string, std::string> kv;
     std::string file;
+    bool xlsx_only = false;
     for (int i = 1; i < argc; ++i) {
         std::string a(argv[i]);
+        if (a == "--xlsx") {
+            xlsx_only = true;
+            continue;
+        }
         size_t eq = a.find('=');
         if (eq != std::string::npos) kv[a.substr(0, eq)] = a.substr(eq + 1);
         else file = a;
     }
     auto get = [&](const char *k, const std::string &d) { return kv.count(k) ? kv[k] : d; };
+    // Excel workbook of <out>_summary.csv and <out>_detail.csv
+    auto workbook = [](const std::string &out) {
+        std::string err;
+        if (!Geobarometer::WriteWorkbook(out + "_summary.csv", out + "_detail.csv", out + ".xlsx", err)) {
+            std::cerr << "error: " << err << std::endl;
+            return false;
+        }
+        std::cerr << "workbook " << out << ".xlsx" << std::endl;
+        return true;
+    };
+    if (xlsx_only) { // geobarometer_cli --xlsx <prefix>: workbook of an earlier run
+        std::string out = file.empty() ? get("out", "geobarometer") : file;
+        for (const char *ext : {"_summary.csv", "_detail.csv", ".csv"})
+            if (out.size() > std::string(ext).size() && out.compare(out.size() - std::string(ext).size(), std::string::npos, ext) == 0) {
+                out.erase(out.size() - std::string(ext).size());
+                break;
+            }
+        return workbook(out) ? 0 : 1;
+    }
+    const bool xlsx = get("xlsx", "0") != "0";
 
     const int jobs = std::stoi(get("jobs", "1"));
     if (jobs > 1 && !file.empty() && file != "--bishop") {
         std::vector<std::string> keys;
         for (const auto &p : kv)
-            if (p.first != "jobs" && p.first != "out") keys.push_back(p.first + "=" + p.second);
-        return RunInParts(argv[0], file, jobs, keys, get("out", "geobarometer"));
+            if (p.first != "jobs" && p.first != "out" && p.first != "xlsx") keys.push_back(p.first + "=" + p.second);
+        const int code = RunInParts(argv[0], file, jobs, keys, get("out", "geobarometer"));
+        if (xlsx && !workbook(get("out", "geobarometer"))) return 1;
+        return code;
     }
 
     const std::string version = get("version", "1.0.2");
@@ -249,5 +277,6 @@ int main(int argc, char **argv) {
     const std::string out = get("out", "geobarometer");
     Geobarometer::WriteSummaryCSV(out + "_summary.csv", s, all);
     Geobarometer::WriteDetailCSV(out + "_detail.csv", s, all);
+    if (xlsx && !workbook(out)) return 1;
     return 0;
 }

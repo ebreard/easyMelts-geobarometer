@@ -56,11 +56,11 @@ jobs:
             LIBBATCH="$P/lib/libgsl.a $P/lib/libgslcblas.a -lxml2 -lz -liconv"
           DEF="-DBATCH_VERSION -DRHYOLITE_ADJUSTMENTS -DEASYMELTS_UPDATE_SYSTEM"
           clang++ -O2 -std=c++17 $DEF -I./include -I./includes -I$P/include -I$SDK/usr/include/libxml2 -o geobarometer_cli \
-            tests/geobarometer_cli.cpp src/geobarometer.cpp src/melts_interface.cpp src/e_utility.cpp src/file_utility.cpp \
-            libMELTSbatch.a $P/lib/libgsl.a $P/lib/libgslcblas.a -lxml2 -lz -liconv
+            tests/geobarometer_cli.cpp src/geobarometer.cpp src/geobarometer_xlsx.cpp src/melts_interface.cpp src/e_utility.cpp src/file_utility.cpp \
+            libMELTSbatch.a $P/lib/libxlsxwriter.a $P/lib/libgsl.a $P/lib/libgslcblas.a -lxml2 -lz -liconv
           # the GUI test is compiled with easyMelts's own C++ flags (Makefile CPPFLAGS), so it runs the code that ships
           GUIFL="-std=c++17 -DFMT_HEADER_ONLY -DGL_SILENCE_DEPRECATION -DEASYMELTS_UPDATE_SYSTEM -I./include -I./includes -I./include/imgui -I$P/include -I$B/include"
-          mkdir -p gt && for f in e_utility file_utility imgui_demo imgui_draw imgui_input imgui_opengl_melts_version imgui_widgets imgui implot LiberationSans_Regular melts_interface xlsx_writer geobarometer geobarometer_tab; do
+          mkdir -p gt && for f in e_utility file_utility imgui_demo imgui_draw imgui_input imgui_opengl_melts_version imgui_widgets imgui implot LiberationSans_Regular melts_interface xlsx_writer geobarometer geobarometer_tab geobarometer_xlsx; do
             clang++ -c $GUIFL src/$f.cpp -o gt/$f.o
           done
           clang -c -I./include -DGL_SILENCE_DEPRECATION src/glad.c -o gt/glad.o
@@ -83,10 +83,13 @@ jobs:
         run: |
           set -e
           cd run
-          ../geobarometer_cli ../docs/conditions_template.csv jobs=2 out=jobs 2>&1 | grep -a -v "^$" | tail -3
-          cut -d, -f1,2,3,7,12,15 jobs_summary.csv
+          ../geobarometer_cli ../docs/conditions_template.csv jobs=2 xlsx=1 out=jobs 2>&1 | grep -a -v "^$" | tail -3
+          python3 -c "import csv; [print(r['sample'], r['fO2_offset'], r['P_3phase_MPa'], r['P_2phase_MPa'], r['flags_2phase']) for r in csv.DictReader(open('jobs_summary.csv'))]"
           test "$(tail -n +2 jobs_summary.csv | wc -l | tr -d ' ')" = "4"
           test ! -e jobs_part01.csv
+          unzip -l jobs.xlsx | grep -E "worksheets/sheet|charts/chart"
+          test "$(unzip -l jobs.xlsx | grep -c 'worksheets/sheet')" = "3"
+          test "$(unzip -l jobs.xlsx | grep -c 'charts/chart')" = "2"
 
       - name: GUI smoke test (hidden window)
         timeout-minutes: 20
@@ -101,7 +104,7 @@ jobs:
         if: always()
         run: |
           D=easyMelts_geobarometer_macos_${{ matrix.arch }}; mkdir -p $D
-          cp easyMelts easyMelts.command geobarometer_cli LICENSE.txt GEOBAROMETER.md $D/ 2>/dev/null || true
+          cp easyMelts easyMelts.command geobarometer_cli LICENSE.txt GEOBAROMETER.md tools/plot_geobarometer.py $D/ 2>/dev/null || true
           cp docs/easyMelts_geobarometer_guide.pdf docs/glasses_template.csv docs/conditions_template.csv docs/README-macOS.txt $D/ 2>/dev/null || true
           chmod +x $D/easyMelts $D/easyMelts.command $D/geobarometer_cli 2>/dev/null || true
           ditto -c -k --keepParent $D $D.zip

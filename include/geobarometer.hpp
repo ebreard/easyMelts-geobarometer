@@ -55,6 +55,7 @@ struct GeobarometerFit {
     double p_est = std::numeric_limits<double>::quiet_NaN();
     double residual_at_p_est = std::numeric_limits<double>::quiet_NaN();
     std::string phases_at_min; // phases whose saturation temperatures set the residual at the minimum
+    std::vector<std::string> flags; // reasons to look at this pressure before using it (set when it is estimated)
 };
 
 struct GeobarometerRun {
@@ -123,6 +124,10 @@ bool AppendSummaryCSV(const std::string &path, const std::vector<GeobarometerRun
 // Joins CSV files written by the functions above (parts of one batch) into one file, in order. Their
 // columns are united by name (a detail file lists only the phases its runs met); notes stay last.
 bool MergeCSV(const std::vector<std::string> &parts, const std::string &path);
+
+// Excel workbook from a summary and detail pair (geobarometer_xlsx.cpp): a Viewer sheet where a run is
+// picked from a list and its results and two charts follow, plus the Summary and Detail tables.
+bool WriteWorkbook(const std::string &summary_csv, const std::string &detail_csv, const std::string &xlsx, std::string &error);
 bool WriteDetailCSV(const std::string &path, const GeobarometerSettings &s, const std::vector<GeobarometerRun> &runs);
 
 } // namespace Geobarometer
