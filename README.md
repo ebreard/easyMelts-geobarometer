@@ -19,7 +19,7 @@ This is not an official easyMelts release, and it is not associated with or endo
 1. `Init > Version > MELTS_v1.0.x`.
 2. In the **Input/Output** tab, enter the glass composition in wt% with **H2O = 13**. The excess water keeps the melt saturated with fluid at every pressure, as in Ruefer et al. (2025).
 3. In the **Geobarometer** tab, choose three phases (default quartz, feldspar1, feldspar2), the fO2 buffer and one or more offsets (for example `-1, -0.75, -0.5, 0, 0.5`), then click **Run geobarometer**.
-4. Click a row of the results table to see the saturation curves and the residuals, and use **Export CSV** to save them.
+4. Click a row of the results table to see the saturation curves and the residuals, and use **Export CSV** to save them (**Export Excel** also writes a workbook with a run viewer and charts).
 
 To run many glasses at once, choose *CSV file (batch)* and load a CSV file with one row per composition and a header of oxide names (`Sample, SiO2, TiO2, Al2O3, FeO, MnO, MgO, CaO, Na2O, K2O, P2O5, H2O`). The [user guide](docs/easyMelts_geobarometer_guide.pdf) describes every setting and output, and [GEOBAROMETER.md](GEOBAROMETER.md) gives the technical notes.
 
@@ -28,6 +28,8 @@ Each row can also carry its own conditions in optional columns: `P_start`, `P_en
 For thousands of compositions (a Monte Carlo ensemble, for example), `jobs=N` makes the command-line tool cut the file into N parts, run them at once (one per processor core) and join the results into one summary and one detail file, in the order of the input file:
 
     geobarometer_cli.exe glasses.csv jobs=8 p_start=600 p_end=25 t_end=650 rule=phase1 out=glasses
+
+Each pressure found comes with screening flags (the minimum at the end of the pressure range, an extrapolated vertex, a phase absent at a fitted point, a phase that crystallises first), described in [GEOBAROMETER.md](GEOBAROMETER.md). [`tools/plot_geobarometer.py`](tools/plot_geobarometer.py) draws every run from the CSV files (a PDF with one run per page, vector figures for publication, ensemble figures for Monte Carlo draws), and `xlsx=1` or **Export Excel** writes an Excel workbook where a run is picked from a list and its charts follow.
 
 On Windows, [`docs/run_batch_example.bat`](docs/run_batch_example.bat) does the same with a double-click once the file name and settings at its top are set. The window runs a batch one composition after another, and writes the summary of every finished composition to `geobarometer_autosave_summary.csv` as it goes, so a long batch is not lost if it is stopped.
 

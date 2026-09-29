@@ -18,7 +18,8 @@ internet connection and no Excel are needed.
    (NNO by default) and the offsets, e.g. `-1, -0.75, -0.5, 0, 0.5`, choose the three phases,
    press **Run geobarometer**.
 4. Click a row of the results table to see its saturation curves and residuals.
-   **Export CSV** writes `<name>_summary.csv` and `<name>_detail.csv` next to easyMelts.
+   **Export CSV** writes `<name>_summary.csv` and `<name>_detail.csv` next to easyMelts;
+   **Export Excel** writes them and `<name>.xlsx`, a workbook with a run viewer and charts.
 
 For many glasses, pick *CSV file (batch)*: one row per sample, a header with oxide names
 (`Sample, SiO2, TiO2, Al2O3, FeO, MnO, MgO, CaO, Na2O, K2O, P2O5, H2O`; FeOt is read as FeO).
@@ -79,6 +80,44 @@ Each summary row also gives, for each parabola, the pressure range of the points
 and the parabola at the pressures it was fitted to, so every curve the Geobarometer tab draws can be
 redrawn from the two files, for a figure or to check a run.
 
+## Screening flags, figures and the Excel workbook
+
+Each pressure found gets flags (summary columns `flags_3phase` and `flags_2phase`; the *flags*
+column of the tab, with the list on hover and beside the plots). They never change a pressure;
+they point to runs worth a look before the pressure is used:
+
+* `minimum at the end of the pressure range`, `fit on 4 points`, `vertex outside the fitted points`:
+  the smallest residual is at, or one step from, the first or last pressure with a result, so the
+  minimum may lie beyond the grid and the parabola is extrapolated. Widen the pressure range.
+* `<phase> absent at <P> MPa (the minimum)` or `(a fitted point)`: a residual was taken with a phase
+  missing. Under *require phase 1* an absent temperature counts as 0, as a blank cell does in
+  MELTS_Excel, so a pressure where none of the phases appeared has a residual of 0.
+* `<phase> first (+N C)`: at the pressure of the minimum, that phase saturates more than the
+  threshold above the phases that give the pressure, so they are not the first to crystallise from
+  the melt. The fluid is left out. The chosen phases themselves cannot do this, since both two-phase
+  rules take the two highest saturation temperatures of the three; Fe-Ti oxides often do (in most
+  of the Cordón Caulle runs), so whether such a phase counts against a pressure is a judgement the
+  flag leaves to the user.
+
+`tools/plot_geobarometer.py` (Python 3 with numpy and matplotlib; in the zips) draws each run from
+the two CSV files as the tab does, with its flags under the title:
+
+    python plot_geobarometer.py name                    # name_runs.pdf, one run per page
+    python plot_geobarometer.py name --runs flagged     # only the flagged runs
+    python plot_geobarometer.py name --figures figs --format svg --plain   # one vector figure per run
+    python plot_geobarometer.py name --ensemble         # one page per glass for Monte Carlo draws
+
+The ensemble pages group draws by name (`TEC-210-1`, `TEC-210-2`, ... form `TEC-210`) and show the
+residual curves of every draw with the spread of P3 and P2.
+
+**Export Excel** in the tab, `xlsx=1` on the command line, or `geobarometer_cli --xlsx name` for
+files already written, makes `name.xlsx`: a *Viewer* sheet where a run is picked from the list in
+cell B1 and its results, flags and two native charts (saturation temperatures; residuals with the
+fitted parabolas and their vertices) follow the choice, plus the *Summary* table (filterable, with
+the flags) and the *Detail* table. It works the same for 2 runs or 2000. The workbook is made from
+the CSV files, so those of earlier releases convert too; their parabolas are not drawn, since the
+fit columns start with release 4.
+
 ## Checked against MELTS_Excel
 
 The exact requests MELTS_Excel (2025Aug11) sends to its web service were replayed for its
@@ -129,7 +168,9 @@ Up to v0.3.0-geobarometer.1, easyMelts compiled its own copy of the MELTS solid-
 
 Keys: `version`, `p_start`, `p_end`, `p_step`, `t_start`, `t_end`, `t_step`, `buffer`
 (none, hm, nno, qfm, coh, iw), `offsets`, `phases`, `rule` (any or phase1), `threshold`,
-`h2o`, `suppress`, `stop`, `negative`, `quiet`, `step_timeout`, `out`, `jobs`.
+`h2o`, `suppress`, `stop`, `negative`, `quiet`, `step_timeout`, `out`, `jobs`, `xlsx` (1: also
+write `<out>.xlsx`). `geobarometer_cli --xlsx name` makes the workbook of `name_summary.csv` and
+`name_detail.csv` written before.
 
 ## Source code and licence
 
