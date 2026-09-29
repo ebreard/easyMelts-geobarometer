@@ -11,5 +11,5 @@ rem one part per processor core, keeping one core free for the rest of the compu
 set /a JOBS=%NUMBER_OF_PROCESSORS%-1
 if %JOBS% LSS 1 set JOBS=1
 
-geobarometer_cli.exe "%CSV%" %SETTINGS% jobs=%JOBS% out=%CSV:.csv=%
+"%~dp0geobarometer_cli.exe" "%CSV%" %SETTINGS% jobs=%JOBS% out=%CSV:.csv=%
 pause
