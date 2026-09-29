@@ -6,7 +6,7 @@ at its liquidus, in the phases you choose (quartz + two feldspars, plagioclase +
 + quartz, and so on). It runs locally with the same rhyolite-MELTS 1.0.x engine, so no
 internet connection and no Excel are needed.
 
-**Use release v0.3.0-geobarometer.2 or later.** In v0.3.0-geobarometer.1 the easyMelts window ran rhyolite-MELTS without its adjustment to sanidine and gave wrong saturation temperatures (for the Bishop Tuff sample it found no pressure instead of 377.3 / 372.5 MPa); the command-line tool was right.
+**Use release v0.3.0-geobarometer.3 or later.** In v0.3.0-geobarometer.1 the easyMelts window ran rhyolite-MELTS without its adjustment to sanidine and gave wrong saturation temperatures (for the Bishop Tuff sample it found no pressure instead of 377.3 / 372.5 MPa); the command-line tool was right. Up to v0.3.0-geobarometer.2, MELTS could crash part way through a batch on glasses that contain none of an oxide (MgO- or TiO2-free glasses, for example).
 
 ## Quick start
 
@@ -24,6 +24,14 @@ For many glasses, pick *CSV file (batch)*: one row per sample, a header with oxi
 (`Sample, SiO2, TiO2, Al2O3, FeO, MnO, MgO, CaO, Na2O, K2O, P2O5, H2O`; FeOt is read as FeO).
 Rows without H2O get the amount typed in *H2O added when missing* (13 by default). CSV files
 in the easyMelts folder are listed in the *CSV in this folder* menu.
+
+Each row can also carry its own conditions in optional columns: `P_start`, `P_end`, `P_step` (MPa), `T_start`, `T_end`, `T_step` (C), `buffer`, `offsets` (one or more, for example `-1 -0.5 0`), `phase1`, `phase2`, `phase3`, `rule` (`any` or `phase1`) and `threshold` (C). The labels of MELTS_Excel work too (`P1 (MPa)`, `T1 (C)`, `fO2 value`, `Phase 1`, `Formula`, and so on), and a blank cell takes the value set in the tab, so one file can hold runs at different pressures, temperatures, fO2 and phase assemblages. [`docs/conditions_template.csv`](docs/conditions_template.csv) is an example.
+
+For thousands of compositions (a Monte Carlo ensemble, for example), `jobs=N` makes the command-line tool cut the file into N parts, run them at once (one per processor core) and join the results into one summary and one detail file, in the order of the input file:
+
+    geobarometer_cli.exe glasses.csv jobs=8 p_start=600 p_end=25 t_end=650 rule=phase1 out=glasses
+
+On Windows, [`docs/run_batch_example.bat`](docs/run_batch_example.bat) does the same with a double-click once the file name and settings at its top are set. The window runs a batch one composition after another, and writes the summary of every finished composition to `geobarometer_autosave_summary.csv` as it goes, so a long batch is not lost if it is stopped.
 
 ## What is calculated (same rules as MELTS_Excel)
 
@@ -93,11 +101,11 @@ One composition at one fO2 (20 pressures from 500 to 25 MPa) takes 43 s on a lap
   P_Calc sheet shows errors or drops the residual in that case.
 * MELTS no longer writes `melts.out` and the `tables` folder on every step of a run.
 
-Three faults in the MELTS library that could close easyMelts were fixed for this: a singular
+Five faults in the MELTS library that could close easyMelts were fixed for this: a singular
 matrix during a liquidus search called GSL's default handler, which aborts the program (now
 handled as in `silmin()`); a wet-liquidus search after an interrupted equilibration resumed a
 stale step and crashed (the step counter is now reset); and a loop bound in
-`InitComputeDataStruct` read one element past the phase table.
+`InitComputeDataStruct` read one element past the phase table; and for melts that contain none of an oxide (MgO-free glasses, for example), round-off left a trace of the matching liquid component (1e-22 mol Mg2SiO4 once garnet had crystallised) that the constraint matrix of `getEqualityConstraints` had no column for, so MELTS wrote past the end of the matrix and the program crashed part way through a batch; such components are now set to zero before the matrix is built; and when an fO2 buffer was on and the bulk composition held no FeO or no Fe2O3 (after MELTS dropped the liquid and no phase held ferric iron), `getEqualityConstraints` combined the two iron rows through an index of -1, and `subsolidusmuO2` then wrote to a null pointer; the buffer is now removed in that case, as MELTS itself does when its subsolidus buffering reaction fails. A melt with no FeO and no Fe2O3 at all is not calculated with a buffer; its row says so.
 
 Up to v0.3.0-geobarometer.1, easyMelts compiled its own copy of the MELTS solid-phase tables (in `melts_interface.cpp`) without `RHYOLITE_ADJUSTMENTS`, the switch the MELTS library is built with, so the window ran rhyolite-MELTS without the sanidine adjustment. The switch is now set in `melts_interface.hpp`; the upstream makefiles compile the C++ sources without it.
 
@@ -109,7 +117,7 @@ Up to v0.3.0-geobarometer.1, easyMelts compiled its own copy of the MELTS solid-
 
 Keys: `version`, `p_start`, `p_end`, `p_step`, `t_start`, `t_end`, `t_step`, `buffer`
 (none, hm, nno, qfm, coh, iw), `offsets`, `phases`, `rule` (any or phase1), `threshold`,
-`h2o`, `suppress`, `stop`, `quiet`, `step_timeout`, `out`.
+`h2o`, `suppress`, `stop`, `quiet`, `step_timeout`, `out`, `jobs`.
 
 ## Source code and licence
 

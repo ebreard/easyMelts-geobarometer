@@ -20,3 +20,7 @@ The user guide (easyMelts_geobarometer_guide.pdf) describes the Geobarometer tab
 command-line tool runs from Terminal in the same folder, for example
 
     ./geobarometer_cli offsets=-1,-0.75,-0.5,0,0.5 phases=quartz,feldspar,orthopyroxene glasses.csv
+
+and a large batch runs in parallel, one part per processor core, with for example
+
+    ./geobarometer_cli glasses.csv jobs=8 out=glasses

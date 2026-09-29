@@ -6,7 +6,7 @@ This is not an official easyMelts release, and it is not associated with or endo
 
 ## Download ##
 
-**Use release v0.3.0-geobarometer.2 or later.** In v0.3.0-geobarometer.1 the easyMelts window ran rhyolite-MELTS without its adjustment to sanidine and gave wrong saturation temperatures (for the Bishop Tuff sample it found no pressure instead of 377.3 / 372.5 MPa); the command-line tool was right.
+**Use release v0.3.0-geobarometer.3 or later.** In v0.3.0-geobarometer.1 the easyMelts window ran rhyolite-MELTS without its adjustment to sanidine and gave wrong saturation temperatures (for the Bishop Tuff sample it found no pressure instead of 377.3 / 372.5 MPa); the command-line tool was right. Up to v0.3.0-geobarometer.2, MELTS could crash part way through a batch on glasses that contain none of an oxide (MgO- or TiO2-free glasses, for example).
 
 **Windows:** download the zip under **Releases**, unzip it and double-click `easyMelts.exe`. The zip also contains `geobarometer_cli.exe` (the same calculation from the command line), the [user guide (PDF)](docs/easyMelts_geobarometer_guide.pdf), a CSV template, the licence and the source patch.
 
@@ -22,6 +22,14 @@ This is not an official easyMelts release, and it is not associated with or endo
 4. Click a row of the results table to see the saturation curves and the residuals, and use **Export CSV** to save them.
 
 To run many glasses at once, choose *CSV file (batch)* and load a CSV file with one row per composition and a header of oxide names (`Sample, SiO2, TiO2, Al2O3, FeO, MnO, MgO, CaO, Na2O, K2O, P2O5, H2O`). The [user guide](docs/easyMelts_geobarometer_guide.pdf) describes every setting and output, and [GEOBAROMETER.md](GEOBAROMETER.md) gives the technical notes.
+
+Each row can also carry its own conditions in optional columns: `P_start`, `P_end`, `P_step` (MPa), `T_start`, `T_end`, `T_step` (C), `buffer`, `offsets` (one or more, for example `-1 -0.5 0`), `phase1`, `phase2`, `phase3`, `rule` (`any` or `phase1`) and `threshold` (C). The labels of MELTS_Excel work too (`P1 (MPa)`, `T1 (C)`, `fO2 value`, `Phase 1`, `Formula`, and so on), and a blank cell takes the value set in the tab, so one file can hold runs at different pressures, temperatures, fO2 and phase assemblages. [`docs/conditions_template.csv`](docs/conditions_template.csv) is an example.
+
+For thousands of compositions (a Monte Carlo ensemble, for example), `jobs=N` makes the command-line tool cut the file into N parts, run them at once (one per processor core) and join the results into one summary and one detail file, in the order of the input file:
+
+    geobarometer_cli.exe glasses.csv jobs=8 p_start=600 p_end=25 t_end=650 rule=phase1 out=glasses
+
+On Windows, [`docs/run_batch_example.bat`](docs/run_batch_example.bat) does the same with a double-click once the file name and settings at its top are set. The window runs a batch one composition after another, and writes the summary of every finished composition to `geobarometer_autosave_summary.csv` as it goes, so a long batch is not lost if it is stopped.
 
 ## Reproducing a MELTS_Excel run ##
 
@@ -48,6 +56,8 @@ The exact requests that MELTS_Excel (version of 11 August 2025) sends to its MEL
 The Windows, Linux and macOS builds give identical results. The Geobarometer tab gives the same tables as the command-line tool: runs replayed through the tab on Windows match it value for value, and a test of the tab compiled exactly like the released program checks the Bishop Tuff result on every change. A GitHub Actions job builds and tests every change on macOS 14 (Apple silicon) and macOS 15 (Intel): the Bishop Tuff case reproduces all 306 saturation temperatures and both pressures, and the tab runs end to end in a hidden window.
 
 Up to v0.3.0-geobarometer.1, easyMelts compiled its own copy of the MELTS solid-phase tables (in `melts_interface.cpp`) without `RHYOLITE_ADJUSTMENTS`, the switch the MELTS library is built with, so the window ran rhyolite-MELTS without the sanidine adjustment. The switch is now set in `melts_interface.hpp`; the upstream makefiles compile the C++ sources without it.
+
+Up to v0.3.0-geobarometer.2, for melts that contain none of an oxide (MgO-free glasses, for example), round-off left a trace of the matching liquid component (1e-22 mol Mg2SiO4 once garnet had crystallised) that the constraint matrix of `getEqualityConstraints` had no column for, so MELTS wrote past the end of the matrix and the program crashed part way through a batch; such components are now set to zero before the matrix is built. In the same way, when an fO2 buffer was on and the bulk composition held no FeO or no Fe2O3 (after MELTS dropped the liquid and no phase held ferric iron), `getEqualityConstraints` combined the two iron rows through an index of -1, and `subsolidusmuO2` then wrote to a null pointer; the buffer is now removed in that case, as MELTS itself does when its subsolidus buffering reaction fails. A melt with no FeO and no Fe2O3 at all is not calculated with a buffer; its row says so.
 
 ## Speed ##
 
