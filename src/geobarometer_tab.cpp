@@ -289,6 +289,10 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
     ImGui::SameLine();
     Help("Saturation temperatures are the highest temperatures at which a phase is present, so the rest of the path cannot "
          "change them. Untick to follow every path down to the melt fraction limit (slower; fills the all-phase table).");
+    ImGui::Checkbox("Count negative oxide values as 0", &s.negative_to_zero);
+    ImGui::SameLine();
+    Help("MELTS cannot use a negative amount of an oxide (a Monte Carlo draw below zero, for example). Ticked, it counts "
+         "as 0 and the notes say so; unticked, such a composition is not calculated.");
 
     if (ImGui::TreeNode("Suppressed phases")) {
         ImGui::Columns(3, NULL, false);

@@ -10,6 +10,7 @@
        buffer (none, hm, nno, qfm, coh, iw), offsets (comma list), phases (comma list of three),
        rule (any|phase1), threshold (C), h2o (g added when the file has no H2O),
        suppress (comma list, default amphibole,biotite), stop (1|0), out (file prefix),
+       negative (zero|skip: a negative oxide amount counts as 0, or the composition is not calculated),
        jobs (run the file in that many parts at once, one per processor core, and join the results)
 
  Rows of the CSV file can override the grid, fO2, phases, rule and threshold in their own columns
@@ -195,6 +196,12 @@ int main(int argc, char **argv) {
     s.require_phase1 = get("rule", "any") == "phase1";
     s.threshold = std::stod(get("threshold", "5"));
     s.stop_when_found = get("stop", "1") != "0";
+    const std::string negative = get("negative", "zero");
+    if (negative != "zero" && negative != "skip") {
+        std::cerr << "error: negative is 'zero' or 'skip', not '" << negative << "'" << std::endl;
+        return 1;
+    }
+    s.negative_to_zero = negative == "zero";
     s.quiet = get("quiet", "1") != "0";
     s.step_timeout = std::stod(get("step_timeout", "20"));
     const std::vector<std::string> sup = List(get("suppress", "amphibole,biotite"));

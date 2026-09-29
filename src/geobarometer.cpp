@@ -308,26 +308,33 @@ std::vector<double> PressureGrid(const GeobarometerSettings &s) {
     return p;
 }
 
-std::vector<GeobarometerRun> Run(const GeobarometerSettings &s, const std::string &sample,
+std::vector<GeobarometerRun> Run(const GeobarometerSettings &settings, const std::string &sample,
                                  std::atomic<int> *pressures_done, std::atomic<bool> *cancel) {
+    GeobarometerSettings s = settings; // negative oxide amounts may be set to 0 below
     RunGuard guard(s.quiet);
     std::vector<GeobarometerRun> runs;
     const std::vector<double> grid = PressureGrid(s);
     std::vector<double> offsets = s.fo2_offsets;
     if (offsets.empty() || s.fo2_path == FO2_NONE) offsets = {0.0};
 
-    // Compositions MELTS cannot calculate get a row that says why. A negative amount of an oxide (a
-    // Monte Carlo draw below zero, for example) gives a liquid component a negative mole fraction, and
-    // no wet liquidus is found. An fO2 buffer acts on FeO and Fe2O3; with neither, MELTS writes past the
-    // end of its constraint matrix (getEqualityConstraints).
+    // A negative amount of an oxide (a Monte Carlo draw below zero, for example) gives a liquid
+    // component a negative mole fraction and no wet liquidus is found, so it counts as 0 (the row says
+    // so), or the composition is not calculated. An fO2 buffer acts on FeO and Fe2O3; with neither,
+    // MELTS writes past the end of its constraint matrix (getEqualityConstraints), so such a melt is
+    // not calculated either. Either way the row says why.
     static const char *oxides[] = {"SiO2", "TiO2", "Al2O3", "Fe2O3", "Cr2O3", "FeO", "MnO", "MgO", "NiO", "CoO",
                                    "CaO", "Na2O", "K2O", "P2O5", "H2O", "CO2", "SO3", "Cl2O-1", "F2O-1"};
-    std::string refused;
+    std::string negatives, zeroed, refused;
     for (int i = 0; i < 19; ++i)
-        if (s.composition[i] < 0.0)
-            refused += std::string(refused.empty() ? "negative " : ", ") + oxides[i] + " (" + Fmt(s.composition[i], 3) + ")";
-    if (!refused.empty()) refused += " in the composition, not calculated";
-    else if (s.fo2_path != FO2_NONE && !(s.composition[3] > 0.0) && !(s.composition[5] > 0.0))
+        if (s.composition[i] < 0.0) {
+            negatives += std::string(negatives.empty() ? "negative " : ", ") + oxides[i] + " (" + Fmt(s.composition[i], 3) + ")";
+            if (s.negative_to_zero) s.composition[i] = 0.0;
+        }
+    if (!negatives.empty()) {
+        if (s.negative_to_zero) zeroed = negatives + " set to 0";
+        else refused = negatives + " in the composition, not calculated";
+    }
+    if (refused.empty() && s.fo2_path != FO2_NONE && !(s.composition[3] > 0.0) && !(s.composition[5] > 0.0))
         refused = "no FeO or Fe2O3: an fO2 buffer cannot be applied (choose buffer none), not calculated";
     if (!refused.empty()) {
         for (double offset : offsets) {
@@ -335,7 +342,7 @@ std::vector<GeobarometerRun> Run(const GeobarometerSettings &s, const std::strin
             run.sample = sample;
             run.fo2_offset = offset;
             run.settings = s;
-            run.message = refused;
+            run.message = zeroed.empty() ? refused : zeroed + " | " + refused;
             Evaluate(s, run);
             runs.push_back(run);
         }
@@ -389,6 +396,7 @@ std::vector<GeobarometerRun> Run(const GeobarometerSettings &s, const std::strin
 
         if (run.pressure.empty() && !run.cancelled)
             run.message = "no result at any pressure" + (first_failure.empty() ? std::string() : " (first, " + first_failure + ")");
+        if (!zeroed.empty()) run.message = zeroed + (run.message.empty() ? std::string() : " | " + run.message);
         run.settings = s;
         Evaluate(s, run);
         runs.push_back(run);

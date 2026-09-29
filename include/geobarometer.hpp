@@ -36,6 +36,7 @@ struct GeobarometerSettings {
     double threshold = 5.0;                 // C
     double min_liquid_fraction = 0.1;       // a path stops once liquid falls below this mass fraction of the system
     bool stop_when_found = true;            // stop a path once the three phases have appeared (same result, faster)
+    bool negative_to_zero = true;           // a negative oxide amount counts as 0; false: the composition is not calculated
     bool quiet = true;                      // silence the MELTS console output during the run
     double step_timeout = 20.0;             // s; a path stops at an equilibration that has not converged by then
     std::map<int, std::string> suppressed;  // MELTS phase index -> label
