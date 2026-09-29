@@ -70,6 +70,13 @@ Monte Carlo draw below zero, for example), or with an fO2 buffer but no FeO and 
 calculated, and its row says why; a composition that gives no result at any pressure quotes the
 first failure.
 
+Each summary row also gives, for each parabola, the pressure range of the points it was fitted to
+(`fit_P_min_3phase_MPa`, `fit_P_max_3phase_MPa`, and the same for `2phase`) and its coefficients
+(`fit_a`, `fit_b`, `fit_c`: residual in °C = a P² + b P + c, with P in MPa; the pressure is the vertex,
+-b/2a, when a > 0). The detail file has the saturation temperatures and residuals at every pressure
+and the parabola at the pressures it was fitted to, so every curve the Geobarometer tab draws can be
+redrawn from the two files, for a figure or to check a run.
+
 ## Checked against MELTS_Excel
 
 The exact requests MELTS_Excel (2025Aug11) sends to its web service were replayed for its
