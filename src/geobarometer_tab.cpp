@@ -124,12 +124,11 @@ const char *kAbout =
 
 } // namespace
 
+// Summary of every finished composition of the current run, written next to easyMelts as the run goes.
+static const char *const kAutosave = "geobarometer_autosave_summary.csv";
+
 void ImGuiOpenGL::GeobarometerTab(int melts_version) {
-    static char file_buf[512] = "";
     static char out_buf[128] = "geobarometer";
-    static int source = 0;
-    static int rule = 0;
-    static double batch_h2o = 13.0;
     static bool suppressed_init = false;
     static bool refit_plots = true;
     static std::vector<std::string> csv_files;
@@ -169,10 +168,10 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
     ImGui::Dummy(ImVec2(0, 5.f));
     ImGui::Separator();
     ImGui::Text("Melt composition");
-    ImGui::RadioButton("Input/Output tab", &source, 0);
+    ImGui::RadioButton("Input/Output tab", &m_GbSource, 0);
     ImGui::SameLine();
-    ImGui::RadioButton("CSV file (batch)", &source, 1);
-    if (source == 0) {
+    ImGui::RadioButton("CSV file (batch)", &m_GbSource, 1);
+    if (m_GbSource == 0) {
         std::string line;
         int shown = 0;
         for (int i = 0; i < 16; ++i)
@@ -186,35 +185,59 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
              "add excess H2O, e.g. 13 g per 100 g of glass as in Ruefer et al. (2025). The fO2 buffer resets the FeO/Fe2O3 split.");
     } else {
         ImGui::PushItemWidth(w * 0.62f);
-        ImGui::InputText("##csvpath", file_buf, sizeof file_buf);
+        ImGui::InputText("##csvpath", m_GbCsvPath, sizeof m_GbCsvPath);
         ImGui::PopItemWidth();
         ImGui::SameLine();
         if (ImGui::Button("Load")) {
             m_GbNames.clear();
             m_GbComps.clear();
+            m_GbConds.clear();
             std::string err;
-            if (Geobarometer::ReadCompositions(file_buf, batch_h2o, m_GbNames, m_GbComps, err))
-                m_GbMessage = std::to_string(m_GbComps.size()) + " compositions loaded from " + std::string(file_buf);
-            else
+            if (Geobarometer::ReadCompositions(m_GbCsvPath, m_GbBatchH2O, m_GbNames, m_GbComps, err, &m_GbConds)) {
+                int with = 0;
+                std::string bad;
+                for (size_t i = 0; i < m_GbConds.size(); ++i) {
+                    if (m_GbConds[i].empty()) continue;
+                    ++with;
+                    GeobarometerSettings check = s;
+                    if (bad.empty() && !Geobarometer::ApplyConditions(m_GbConds[i], check, err)) bad = m_GbNames[i] + ": " + err;
+                }
+                if (!bad.empty()) {
+                    m_GbMessage = "Could not use the conditions of " + bad;
+                    m_GbNames.clear();
+                    m_GbComps.clear();
+                    m_GbConds.clear();
+                } else {
+                    m_GbMessage = std::to_string(m_GbComps.size()) + " compositions loaded from " + std::string(m_GbCsvPath) +
+                                  (with ? ", " + std::to_string(with) + " with their own conditions" : std::string());
+                }
+            } else {
                 m_GbMessage = "Could not read the file: " + err;
+            }
         }
         ImGui::SameLine();
         Help("CSV with a header row: an optional sample name column, then oxide columns named SiO2, TiO2, Al2O3, Fe2O3, "
              "FeO (or FeOt), MnO, MgO, CaO, Na2O, K2O, P2O5, H2O. Comma, semicolon or tab separated. Rows without H2O get "
-             "the amount below. Files in the easyMelts folder are listed in the menu.");
+             "the amount below. Files in the easyMelts folder are listed in the menu.\n"
+             "Optional columns give a row its own conditions: P_start, P_end, P_step, T_start, T_end, T_step, buffer, "
+             "offsets (e.g. -1 -0.5 0), phase1, phase2, phase3, rule (any or phase1), threshold. MELTS_Excel labels such as "
+             "P1 (MPa), T1 (C), fO2 value and Phase 1 work too. Blank cells use the settings on this panel.");
         if (ImGui::BeginCombo("CSV in this folder", "", ImGuiComboFlags_NoPreview)) {
             if (ImGui::IsWindowAppearing()) {
                 FileUtility fu;
                 csv_files = fu.GetFilesWithName(".csv");
             }
             for (const auto &f : csv_files)
-                if (ImGui::Selectable(f.c_str())) std::strncpy(file_buf, f.c_str(), sizeof file_buf - 1);
+                if (ImGui::Selectable(f.c_str())) std::strncpy(m_GbCsvPath, f.c_str(), sizeof m_GbCsvPath - 1);
             ImGui::EndCombo();
         }
         ImGui::PushItemWidth(w * 0.3f);
-        ImGui::InputDouble("H2O added when missing (g)", &batch_h2o, 0.5, 1.0, "%.2f");
+        ImGui::InputDouble("H2O added when missing (g)", &m_GbBatchH2O, 0.5, 1.0, "%.2f");
         ImGui::PopItemWidth();
-        ImGui::Text("%d compositions ready", (int)m_GbComps.size());
+        int with = 0;
+        for (const auto &c : m_GbConds) with += !c.empty();
+        if (with) ImGui::Text("%d compositions ready, %d with their own conditions", (int)m_GbComps.size(), with);
+        else ImGui::Text("%d compositions ready", (int)m_GbComps.size());
     }
 
     ImGui::Dummy(ImVec2(0, 5.f));
@@ -253,12 +276,12 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
     StringCombo("phase 3", s.phases[2], choices);
     ImGui::PopItemWidth();
     ImGui::PushItemWidth(w * 0.5f);
-    ImGui::Combo("two-phase residual", &rule, "any two phases\0require phase 1\0\0");
+    int rule = s.require_phase1 ? 1 : 0;
+    if (ImGui::Combo("two-phase residual", &rule, "any two phases\0require phase 1\0\0")) s.require_phase1 = (rule == 1);
     ImGui::SameLine();
     Help("any two phases: highest minus second highest saturation temperature, so a two-phase pressure is only found where "
          "those two phases are the first to crystallise (MELTS_Excel default).\nrequire phase 1: |T(phase 1) - max(T(phase 2), T(phase 3))|.");
     ImGui::PopItemWidth();
-    s.require_phase1 = (rule == 1);
     ImGui::PushItemWidth(w * 0.25f);
     ImGui::InputDouble("residual threshold (C)", &s.threshold, 1.0, 5.0, "%.1f");
     ImGui::InputDouble("stop path below melt fraction", &s.min_liquid_fraction, 0.01, 0.1, "%.2f");
@@ -286,14 +309,17 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
         m_GbAutoRun = false;
         std::vector<std::array<double, 20>> comps;
         std::vector<std::string> names;
-        if (source == 0) {
+        std::vector<std::map<std::string, std::string>> conds;
+        if (m_GbSource == 0) {
             comps.push_back(m_Composition);
             const std::string title = _MI.GetTitle();
             names.push_back(title.empty() || title == "Title" || title == "Default" ? std::string("Input/Output tab") : title);
         } else {
             comps = m_GbComps;
             names = m_GbNames;
+            conds = m_GbConds;
         }
+        conds.resize(comps.size());
         s.fo2_offsets = ParseList(m_GbOffsets);
         if (s.fo2_offsets.empty()) s.fo2_offsets.push_back(0.0);
         s.suppressed.clear();
@@ -302,21 +328,34 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
             if (m_GbSuppressed[count]) s.suppressed.insert(a);
             ++count;
         }
+        // Settings of each run: this panel, then the conditions of its batch row on top
+        std::vector<GeobarometerSettings> rows;
+        std::string err;
+        int total = 0;
+        for (size_t i = 0; i < comps.size(); ++i) {
+            GeobarometerSettings c = s;
+            c.composition = comps[i];
+            if (!Geobarometer::ApplyConditions(conds[i], c, err)) {
+                m_GbMessage = "Could not use the conditions of " + names[i] + ": " + err;
+                rows.clear();
+                break;
+            }
+            total += (int)Geobarometer::PressureGrid(c).size() * (int)(c.fo2_path == FO2_NONE ? 1 : std::max<size_t>(1, c.fo2_offsets.size()));
+            rows.push_back(c);
+        }
         if (comps.empty()) {
             m_GbMessage = "No composition to run: load a CSV file first.";
-        } else {
-            const int per = (int)Geobarometer::PressureGrid(s).size() * (int)(s.fo2_path == FO2_NONE ? 1 : s.fo2_offsets.size());
-            m_GbTotal = per * (int)comps.size();
+        } else if (!rows.empty()) {
+            m_GbTotal = total;
             m_GbDone = 0;
             m_GbCancel = false;
             m_GbRunSettings = s;
-            GeobarometerSettings copy = s;
-            m_GbFuture = std::async(std::launch::async, [this, copy, comps, names]() {
+            m_GbFuture = std::async(std::launch::async, [this, rows, names]() {
                 std::vector<GeobarometerRun> all;
-                GeobarometerSettings c = copy;
-                for (size_t i = 0; i < comps.size() && !m_GbCancel.load(); ++i) {
-                    c.composition = comps[i];
-                    std::vector<GeobarometerRun> r = Geobarometer::Run(c, names[i], &m_GbDone, &m_GbCancel);
+                for (size_t i = 0; i < rows.size() && !m_GbCancel.load(); ++i) {
+                    std::vector<GeobarometerRun> r = Geobarometer::Run(rows[i], names[i], &m_GbDone, &m_GbCancel);
+                    // kept on disk as the batch goes, so that a long batch survives a crash
+                    Geobarometer::AppendSummaryCSV(kAutosave, r, i == 0);
                     all.insert(all.end(), r.begin(), r.end());
                 }
                 return all;
@@ -376,7 +415,7 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
         return;
     }
     if (m_GbSelected >= (int)m_GbRuns.size()) m_GbSelected = 0;
-    const GeobarometerSettings &rs = m_GbRunSettings;
+    const GeobarometerSettings &rs = m_GbRuns[m_GbSelected].settings; // phases and buffer of the selected run
 
     const float table_h = std::min(ImGui::GetWindowHeight() * 0.3f, 60.f + 22.f * (float)m_GbRuns.size());
     ImGui::BeginChild("GbTable", ImVec2(0, table_h), true);

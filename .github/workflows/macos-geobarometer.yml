@@ -79,6 +79,15 @@ jobs:
           ../geobarometer_cli --bishop out=mac 2>&1 | grep -a offset
           python3 ../tests/geobarometer_compare.py mac_detail.csv mac_summary.csv ../tests/geobarometer_reference_bishop_nno_detail.csv
 
+      - name: Parallel batch (jobs=2) with conditions for each row
+        run: |
+          set -e
+          cd run
+          ../geobarometer_cli ../docs/conditions_template.csv jobs=2 out=jobs 2>&1 | grep -a -v "^$" | tail -3
+          cut -d, -f1,2,3,7,12,15 jobs_summary.csv
+          test "$(tail -n +2 jobs_summary.csv | wc -l | tr -d ' ')" = "4"
+          test ! -e jobs_part01.csv
+
       - name: GUI smoke test (hidden window)
         timeout-minutes: 20
         # the Apple silicon runners have no graphics device at all, so OpenGL cannot start there
@@ -93,7 +102,7 @@ jobs:
         run: |
           D=easyMelts_geobarometer_macos_${{ matrix.arch }}; mkdir -p $D
           cp easyMelts easyMelts.command geobarometer_cli LICENSE.txt GEOBAROMETER.md $D/ 2>/dev/null || true
-          cp docs/easyMelts_geobarometer_guide.pdf docs/glasses_template.csv docs/README-macOS.txt $D/ 2>/dev/null || true
+          cp docs/easyMelts_geobarometer_guide.pdf docs/glasses_template.csv docs/conditions_template.csv docs/README-macOS.txt $D/ 2>/dev/null || true
           chmod +x $D/easyMelts $D/easyMelts.command $D/geobarometer_cli 2>/dev/null || true
           ditto -c -k --keepParent $D $D.zip
           ls -la $D

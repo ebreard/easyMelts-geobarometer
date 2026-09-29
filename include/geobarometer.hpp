@@ -63,10 +63,12 @@ struct GeobarometerRun {
     std::vector<std::array<double, 3>> tsat;   // saturation temperature of the three phases (C), NaN if absent
     std::vector<double> delta3, delta2;        // residuals (C), NaN where undefined
     std::vector<std::string> note;
+    std::string message;                       // about the whole run (e.g. why it was not calculated)
     std::map<std::string, std::vector<double>> all_tsat; // every phase seen, NaN where absent
     GeobarometerFit fit3, fit2;
     int equilibrations = 0;
     bool cancelled = false;
+    GeobarometerSettings settings; // what this run used, conditions of its batch row included
 };
 
 namespace Geobarometer {
@@ -92,13 +94,33 @@ GeobarometerFit FitResidual(const std::vector<double> &p, const std::vector<doub
 // instances (e.g. feldspar1, feldspar2), and plagioclase / sanidine split at 25 mol% sanidine.
 std::vector<std::string> PhaseChoices();
 
-// Batch input: CSV with a header row of oxide names and an optional sample column.
-// FeOt, FeO* and FeOT are read as FeO. Missing H2O is set to default_h2o.
+// fO2 buffers in the order of the MELTS constants: none, HM, NNO, QFM, COH, IW.
+const std::vector<std::string> &BufferNames();
+int BufferIndex(const std::string &name); // case-insensitive, -1 if unknown
+
+// Batch input: CSV with a header row of oxide names, an optional sample column and optional
+// condition columns. FeOt, FeO* and FeOT are read as FeO. Missing H2O is set to default_h2o.
+// Condition columns, each optional, with blank cells meaning "use the settings of the run":
+//   P_start, P_end, P_step (MPa), T_start, T_end, T_step (C), buffer, offsets (one or more,
+//   separated by spaces, | or ;), phase1, phase2, phase3, rule (any or phase1), threshold (C).
+// The labels of MELTS_Excel work too: P1 (MPa), P2 (MPa), P step (MPa), T1 (C), T2 (C),
+// T step (C), fO2 buffer, fO2 value, Phase 1, Phase 2, Phase 3, Formula.
 bool ReadCompositions(const std::string &path, double default_h2o,
                       std::vector<std::string> &names, std::vector<std::array<double, 20>> &comps,
-                      std::string &error);
+                      std::string &error, std::vector<std::map<std::string, std::string>> *conditions = nullptr);
+
+// Applies the condition cells of one batch row (keys as read by ReadCompositions) to settings s.
+// MELTS must be initialised, because phase names are checked against the phases it knows.
+bool ApplyConditions(const std::map<std::string, std::string> &conditions, GeobarometerSettings &s, std::string &error);
 
 bool WriteSummaryCSV(const std::string &path, const GeobarometerSettings &s, const std::vector<GeobarometerRun> &runs);
+// Adds the summary rows of runs to a file, with the header first if header is true, so that a long
+// batch can keep its results on disk as it goes.
+bool AppendSummaryCSV(const std::string &path, const std::vector<GeobarometerRun> &runs, bool header);
+
+// Joins CSV files written by the functions above (parts of one batch) into one file, in order. Their
+// columns are united by name (a detail file lists only the phases its runs met); notes stay last.
+bool MergeCSV(const std::vector<std::string> &parts, const std::string &path);
 bool WriteDetailCSV(const std::string &path, const GeobarometerSettings &s, const std::vector<GeobarometerRun> &runs);
 
 } // namespace Geobarometer

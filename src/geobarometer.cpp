@@ -20,6 +20,7 @@
 #include "melts_interface.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <climits>
 #include <cmath>
@@ -315,6 +316,21 @@ std::vector<GeobarometerRun> Run(const GeobarometerSettings &s, const std::strin
     std::vector<double> offsets = s.fo2_offsets;
     if (offsets.empty() || s.fo2_path == FO2_NONE) offsets = {0.0};
 
+    // An fO2 buffer acts on FeO and Fe2O3; with neither, MELTS writes past the end of its constraint
+    // matrix (getEqualityConstraints), so such a melt is not calculated.
+    if (s.fo2_path != FO2_NONE && !(s.composition[3] > 0.0) && !(s.composition[5] > 0.0)) {
+        for (double offset : offsets) {
+            GeobarometerRun run;
+            run.sample = sample;
+            run.fo2_offset = offset;
+            run.settings = s;
+            run.message = "no FeO or Fe2O3: an fO2 buffer cannot be applied (choose buffer none), not calculated";
+            Evaluate(s, run);
+            runs.push_back(run);
+        }
+        return runs;
+    }
+
     for (double offset : offsets) {
         GeobarometerRun run;
         run.sample = sample;
@@ -356,6 +372,7 @@ std::vector<GeobarometerRun> Run(const GeobarometerSettings &s, const std::strin
             run.all_tsat[name] = col;
         }
 
+        run.settings = s;
         Evaluate(s, run);
         runs.push_back(run);
         if (run.cancelled) break;
@@ -519,6 +536,36 @@ int OxideIndex(std::string h) {
     return -1;
 }
 
+// Canonical key of a condition column, or "" (letters and digits only, lower case, so that
+// "P1 (MPa)", "p_start" and "P start" all match).
+std::string ConditionKey(const std::string &h) {
+    std::string k;
+    for (char c : h)
+        if (std::isalnum((unsigned char)c)) k += (char)std::tolower((unsigned char)c);
+    static const std::map<std::string, std::string> keys{
+        {"pstart", "p_start"}, {"pstartmpa", "p_start"}, {"p1", "p_start"}, {"p1mpa", "p_start"},
+        {"pend", "p_end"}, {"pendmpa", "p_end"}, {"p2", "p_end"}, {"p2mpa", "p_end"},
+        {"pstep", "p_step"}, {"pstepmpa", "p_step"},
+        {"tstart", "t_start"}, {"tstartc", "t_start"}, {"t1", "t_start"}, {"t1c", "t_start"},
+        {"tend", "t_end"}, {"tendc", "t_end"}, {"t2", "t_end"}, {"t2c", "t_end"},
+        {"tstep", "t_step"}, {"tstepc", "t_step"},
+        {"buffer", "buffer"}, {"fo2buffer", "buffer"},
+        {"offset", "offsets"}, {"offsets", "offsets"}, {"fo2offset", "offsets"}, {"fo2offsets", "offsets"},
+        {"fo2value", "offsets"},
+        {"phase1", "phase1"}, {"phase2", "phase2"}, {"phase3", "phase3"},
+        {"rule", "rule"}, {"twophaserule", "rule"}, {"twophaseresidual", "rule"}, {"formula", "rule"},
+        {"threshold", "threshold"}, {"thresholdc", "threshold"}, {"residualthreshold", "threshold"},
+        {"residualthresholdc", "threshold"}};
+    auto it = keys.find(k);
+    return it == keys.end() ? std::string() : it->second;
+}
+
+// A minus sign typed or pasted as U+2212 becomes '-'.
+std::string AsciiMinus(std::string v) {
+    for (size_t i = v.find("\xE2\x88\x92"); i != std::string::npos; i = v.find("\xE2\x88\x92", i)) v.replace(i, 3, "-");
+    return v;
+}
+
 std::string Csv(double v, int prec = 2) {
     if (!std::isfinite(v)) return "";
     return Fmt(v, prec);
@@ -536,8 +583,104 @@ std::string Quote(const std::string &s) {
 
 } // namespace
 
+const std::vector<std::string> &BufferNames() {
+    static const std::vector<std::string> names{"none", "HM", "NNO", "QFM", "COH", "IW"};
+    return names;
+}
+
+int BufferIndex(const std::string &name) {
+    std::string k;
+    for (char c : name)
+        if (!std::isspace((unsigned char)c)) k += (char)std::toupper((unsigned char)c);
+    if (k == "FMQ") k = "QFM";
+    for (size_t i = 0; i < BufferNames().size(); ++i) {
+        std::string b = BufferNames()[i];
+        for (char &c : b) c = (char)std::toupper((unsigned char)c);
+        if (k == b) return (int)i;
+    }
+    return -1;
+}
+
+bool ApplyConditions(const std::map<std::string, std::string> &c, GeobarometerSettings &s, std::string &error) {
+    auto number = [&](const char *key, double &out) {
+        auto it = c.find(key);
+        if (it == c.end()) return true;
+        const std::string v = AsciiMinus(it->second);
+        char *end = nullptr;
+        const double x = std::strtod(v.c_str(), &end);
+        if (end == v.c_str() || !std::isfinite(x)) {
+            error = std::string(key) + " '" + it->second + "' is not a number";
+            return false;
+        }
+        out = x;
+        return true;
+    };
+    if (!number("p_start", s.p_start) || !number("p_end", s.p_end) || !number("p_step", s.p_step) ||
+        !number("t_start", s.t_start) || !number("t_end", s.t_end) || !number("t_step", s.t_step) ||
+        !number("threshold", s.threshold))
+        return false;
+    if (s.p_step <= 0.0 || s.t_step <= 0.0) {
+        error = "P_step and T_step must be positive";
+        return false;
+    }
+    auto it = c.find("buffer");
+    if (it != c.end()) {
+        const int b = BufferIndex(it->second);
+        if (b < 0) {
+            error = "unknown fO2 buffer '" + it->second + "' (none, HM, NNO, QFM, COH or IW)";
+            return false;
+        }
+        s.fo2_path = b;
+    }
+    it = c.find("offsets");
+    if (it != c.end()) {
+        std::string v = AsciiMinus(it->second);
+        for (char &ch : v)
+            if (ch == '|' || ch == ';' || ch == ',' || ch == '/') ch = ' ';
+        std::istringstream in(v);
+        std::vector<double> off;
+        std::string item;
+        while (in >> item) {
+            char *end = nullptr;
+            const double x = std::strtod(item.c_str(), &end);
+            if (end == item.c_str() || *end != '\0') {
+                error = "offsets '" + it->second + "' are not numbers";
+                return false;
+            }
+            off.push_back(x);
+        }
+        if (!off.empty()) s.fo2_offsets = off;
+    }
+    const std::vector<std::string> choices = PhaseChoices();
+    for (int k = 0; k < 3; ++k) {
+        it = c.find("phase" + std::to_string(k + 1));
+        if (it == c.end()) continue;
+        std::string v;
+        for (char ch : it->second) v += (char)std::tolower((unsigned char)ch);
+        if (std::find(choices.begin(), choices.end(), v) == choices.end()) {
+            error = "unknown phase '" + it->second + "'";
+            return false;
+        }
+        s.phases[k] = v;
+    }
+    it = c.find("rule");
+    if (it != c.end()) {
+        std::string k;
+        for (char ch : it->second)
+            if (std::isalnum((unsigned char)ch)) k += (char)std::tolower((unsigned char)ch);
+        if (k == "any" || k == "anytwo" || k == "anytwophases") s.require_phase1 = false;
+        else if (k == "phase1" || k == "requirephase1") s.require_phase1 = true;
+        else {
+            error = "rule '" + it->second + "' is neither 'any' nor 'phase1'";
+            return false;
+        }
+    }
+    return true;
+}
+
 bool ReadCompositions(const std::string &path, double default_h2o, std::vector<std::string> &names,
-                      std::vector<std::array<double, 20>> &comps, std::string &error) {
+                      std::vector<std::array<double, 20>> &comps, std::string &error,
+                      std::vector<std::map<std::string, std::string>> *conditions) {
     std::ifstream in(path);
     if (!in) {
         error = "cannot open " + path;
@@ -554,11 +697,13 @@ bool ReadCompositions(const std::string &path, double default_h2o, std::vector<s
     if (std::count(header.begin(), header.end(), '\t') > std::count(header.begin(), header.end(), sep)) sep = '\t';
     std::vector<std::string> cols = Split(header, sep);
     std::vector<int> map(cols.size(), -1);
+    std::vector<std::string> ckey(cols.size());
     int name_col = -1;
     bool any = false;
     for (size_t i = 0; i < cols.size(); ++i) {
         map[i] = OxideIndex(cols[i]);
         if (map[i] >= 0) any = true;
+        else if (!(ckey[i] = ConditionKey(cols[i])).empty()) continue;
         else if (name_col < 0) name_col = (int)i;
     }
     if (!any) {
@@ -588,6 +733,17 @@ bool ReadCompositions(const std::string &path, double default_h2o, std::vector<s
         }
         if (total <= 0.0) continue;
         if (!has_h2o || !h2o_set) c[14] = default_h2o;
+        if (conditions) {
+            std::map<std::string, std::string> cond;
+            for (size_t i = 0; i < f.size() && i < ckey.size(); ++i) {
+                if (ckey[i].empty() || f[i].empty()) continue;
+                std::string v = f[i];
+                if (sep == ';' && ckey[i].compare(0, 5, "phase") != 0 && ckey[i] != "buffer" && ckey[i] != "rule")
+                    std::replace(v.begin(), v.end(), ',', '.'); // decimal commas
+                cond[ckey[i]] = v;
+            }
+            conditions->push_back(cond);
+        }
         std::string name = (name_col >= 0 && name_col < (int)f.size()) ? f[name_col] : std::string();
         if (name.empty()) name = "row " + std::to_string(row);
         names.push_back(name);
@@ -600,16 +756,21 @@ bool ReadCompositions(const std::string &path, double default_h2o, std::vector<s
     return true;
 }
 
-bool WriteSummaryCSV(const std::string &path, const GeobarometerSettings &s, const std::vector<GeobarometerRun> &runs) {
-    std::ofstream o(path);
-    if (!o) return false;
+namespace {
+
+void SummaryHeader(std::ostream &o) {
     o << "sample,fO2_offset,P_3phase_MPa,min_dT_3phase_C,P_at_min_3phase_MPa,points_3phase,"
          "P_2phase_MPa,min_dT_2phase_C,P_at_min_2phase_MPa,points_2phase,phases_2phase,"
-         "phase1,phase2,phase3,two_phase_rule,threshold_C,equilibrations,notes\n";
+         "phase1,phase2,phase3,two_phase_rule,threshold_C,"
+         "P_start_MPa,P_end_MPa,P_step_MPa,T_start_C,T_end_C,T_step_C,fO2_buffer,equilibrations,notes\n";
+}
+
+void SummaryRows(std::ostream &o, const std::vector<GeobarometerRun> &runs) {
     for (const auto &r : runs) {
-        std::string notes;
+        const GeobarometerSettings &rs = r.settings;
+        std::string notes = r.message;
         for (size_t i = 0; i < r.note.size(); ++i)
-            if (!r.note[i].empty()) notes += (notes.empty() ? "" : " | ") + Fmt(r.pressure[i], 0) + " MPa: " + r.note[i];
+            if (!r.note[i].empty()) notes += std::string(notes.empty() ? "" : " | ") + Fmt(r.pressure[i], 0) + " MPa: " + r.note[i];
         if (r.cancelled) notes = "stopped by user" + std::string(notes.empty() ? "" : " | ") + notes;
         if (r.fit2.estimated && r.fit2.index_at_min >= 0 && r.fit2.n_fit > 0) {
             const double lo = std::min(r.pressure[std::max(r.fit2.index_at_min - 2, 0)], r.pressure[std::min(r.fit2.index_at_min + 2, (int)r.pressure.size() - 1)]);
@@ -621,11 +782,74 @@ bool WriteSummaryCSV(const std::string &path, const GeobarometerSettings &s, con
           << Csv(r.fit3.p_at_min, 1) << "," << r.fit3.n_fit << ","
           << (r.fit2.estimated ? Csv(r.fit2.p_est, 1) : "") << "," << Csv(r.fit2.min_residual, 2) << ","
           << Csv(r.fit2.p_at_min, 1) << "," << r.fit2.n_fit << "," << Quote(r.fit2.phases_at_min) << ","
-          << Quote(s.phases[0]) << "," << Quote(s.phases[1]) << "," << Quote(s.phases[2]) << ","
-          << (s.require_phase1 ? "require phase 1" : "any two phases") << "," << Csv(s.threshold, 1) << ","
+          << Quote(rs.phases[0]) << "," << Quote(rs.phases[1]) << "," << Quote(rs.phases[2]) << ","
+          << (rs.require_phase1 ? "require phase 1" : "any two phases") << "," << Csv(rs.threshold, 1) << ","
+          << Csv(rs.p_start, 1) << "," << Csv(rs.p_end, 1) << "," << Csv(rs.p_step, 1) << "," << Csv(rs.t_start, 1) << ","
+          << Csv(rs.t_end, 1) << "," << Csv(rs.t_step, 2) << ","
+          << (rs.fo2_path >= 0 && rs.fo2_path < (int)BufferNames().size() ? BufferNames()[rs.fo2_path] : std::string()) << ","
           << r.equilibrations << "," << Quote(notes) << "\n";
     }
-    return true;
+}
+
+} // namespace
+
+bool WriteSummaryCSV(const std::string &path, const GeobarometerSettings &s, const std::vector<GeobarometerRun> &runs) {
+    (void)s; // each run carries its own settings
+    std::ofstream o(path);
+    if (!o) return false;
+    SummaryHeader(o);
+    SummaryRows(o, runs);
+    return (bool)o;
+}
+
+bool MergeCSV(const std::vector<std::string> &parts, const std::string &path) {
+    std::vector<std::string> cols;
+    std::vector<std::vector<std::map<std::string, std::string>>> tables;
+    for (const auto &part : parts) {
+        std::ifstream in(part);
+        std::string line;
+        if (!in || !std::getline(in, line)) continue; // a part that wrote nothing
+        const std::vector<std::string> head = Split(line, ',');
+        for (const auto &c : head)
+            if (std::find(cols.begin(), cols.end(), c) == cols.end()) cols.push_back(c);
+        std::vector<std::map<std::string, std::string>> rows;
+        while (std::getline(in, line)) {
+            if (Trim(line).empty()) continue;
+            const std::vector<std::string> f = Split(line, ',');
+            std::map<std::string, std::string> row;
+            for (size_t i = 0; i < head.size() && i < f.size(); ++i) row[head[i]] = f[i];
+            rows.push_back(row);
+        }
+        tables.push_back(rows);
+    }
+    for (const char *last : {"note", "notes"}) { // notes stay the last column
+        auto it = std::find(cols.begin(), cols.end(), std::string(last));
+        if (it != cols.end()) {
+            cols.erase(it);
+            cols.push_back(last);
+        }
+    }
+    std::ofstream o(path);
+    if (!o) return false;
+    for (size_t i = 0; i < cols.size(); ++i) o << (i ? "," : "") << cols[i];
+    o << "\n";
+    for (const auto &rows : tables)
+        for (const auto &row : rows) {
+            for (size_t i = 0; i < cols.size(); ++i) {
+                auto it = row.find(cols[i]);
+                o << (i ? "," : "") << (it == row.end() ? std::string() : Quote(it->second));
+            }
+            o << "\n";
+        }
+    return (bool)o;
+}
+
+bool AppendSummaryCSV(const std::string &path, const std::vector<GeobarometerRun> &runs, bool header) {
+    std::ofstream o(path, header ? std::ios::trunc : std::ios::app);
+    if (!o) return false;
+    if (header) SummaryHeader(o);
+    SummaryRows(o, runs);
+    return (bool)o;
 }
 
 bool WriteDetailCSV(const std::string &path, const GeobarometerSettings &s, const std::vector<GeobarometerRun> &runs) {
@@ -634,7 +858,13 @@ bool WriteDetailCSV(const std::string &path, const GeobarometerSettings &s, cons
     std::set<std::string> names;
     for (const auto &r : runs)
         for (const auto &kv : r.all_tsat) names.insert(kv.first);
-    o << "sample,fO2_offset,P_MPa,wet_liquidus_C,T_" << s.phases[0] << ",T_" << s.phases[1] << ",T_" << s.phases[2]
+    // Columns named after the phases when every run used the same three; otherwise T_phase1..3,
+    // with the phases of each row in their own columns.
+    const std::array<std::string, 3> &ph = runs.empty() ? s.phases : runs.front().settings.phases;
+    bool mixed = false;
+    for (const auto &r : runs) mixed = mixed || r.settings.phases != ph;
+    o << "sample,fO2_offset," << (mixed ? "phase1,phase2,phase3," : "") << "P_MPa,wet_liquidus_C,"
+      << (mixed ? std::string("T_phase1,T_phase2,T_phase3") : "T_" + ph[0] + ",T_" + ph[1] + ",T_" + ph[2])
       << ",delta_3,delta_2,fit_3,fit_2";
     for (const auto &n : names) o << ",Tsat_" << n;
     o << ",note\n";
@@ -644,7 +874,9 @@ bool WriteDetailCSV(const std::string &path, const GeobarometerSettings &s, cons
             auto fitv = [&](const GeobarometerFit &f) {
                 return std::isfinite(f.a) && f.a > 0.0 ? f.a * p * p + f.b * p + f.c : kNaN;
             };
-            o << Quote(r.sample) << "," << Csv(r.fo2_offset, 3) << "," << Csv(p, 1) << "," << Csv(r.liquidus[i], 2) << ","
+            o << Quote(r.sample) << "," << Csv(r.fo2_offset, 3) << ",";
+            if (mixed) o << Quote(r.settings.phases[0]) << "," << Quote(r.settings.phases[1]) << "," << Quote(r.settings.phases[2]) << ",";
+            o << Csv(p, 1) << "," << Csv(r.liquidus[i], 2) << ","
               << Csv(r.tsat[i][0], 1) << "," << Csv(r.tsat[i][1], 1) << "," << Csv(r.tsat[i][2], 1) << ","
               << Csv(r.delta3[i], 2) << "," << Csv(r.delta2[i], 2) << "," << Csv(fitv(r.fit3), 2) << "," << Csv(fitv(r.fit2), 2);
             for (const auto &n : names) {

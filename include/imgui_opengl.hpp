@@ -92,6 +92,10 @@ private:
     int m_GbSelected = 0;
     std::vector<std::string> m_GbNames;
     std::vector<std::array<double, 20>> m_GbComps;
+    std::vector<std::map<std::string, std::string>> m_GbConds; // conditions given in each batch row
+    int m_GbSource = 0;            // composition from 0: the Input/Output tab, 1: a CSV batch file
+    char m_GbCsvPath[512] = "";    // batch file
+    double m_GbBatchH2O = 13.0;    // H2O added to batch rows without it (g)
     std::string m_GbMessage;
     std::array<bool, 42> m_GbSuppressed{};
     char m_GbOffsets[128] = "0"; // fO2 offsets as typed, comma separated

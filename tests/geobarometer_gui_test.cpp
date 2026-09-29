@@ -7,7 +7,7 @@
  (the Makefile's CPPFLAGS) so that it runs the code that ships; it fails when the Bishop Tuff
  result is not the validated 377.3 / 372.5 MPa.
 
-   geobarometer_gui_test [out.ppm]
+   geobarometer_gui_test [out.ppm [conditions_template.csv]]
 */
 
 #include <chrono>
@@ -24,7 +24,7 @@
 static void ReportGlfwError(int code, const char *text) { std::fprintf(stderr, "GLFW error %d: %s\n", code, text); }
 
 struct GeobarometerGuiTest {
-    static int Run(const char *ppm, int width, int height) {
+    static int Run(const char *ppm, const char *batch, int width, int height) {
         glfwSetErrorCallback(ReportGlfwError);
         if (!glfwInit()) return 2;
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -114,6 +114,39 @@ struct GeobarometerGuiTest {
             second.insert(second.size() - 4, "_opx");
             save(second);
             report();
+
+            // Third run: a CSV batch whose second row carries its own grid, offsets, phases and rule
+            // (docs/conditions_template.csv); the first row keeps the settings of the tab.
+            gui.m_GbSettings.phases = {{"quartz", "feldspar1", "feldspar2"}};
+            std::snprintf(gui.m_GbOffsets, sizeof gui.m_GbOffsets, "0");
+            gui.m_GbSource = 1;
+            std::snprintf(gui.m_GbCsvPath, sizeof gui.m_GbCsvPath, "%s", batch);
+            gui.m_GbNames.clear();
+            gui.m_GbComps.clear();
+            gui.m_GbConds.clear();
+            std::string err;
+            if (!Geobarometer::ReadCompositions(gui.m_GbCsvPath, gui.m_GbBatchH2O, gui.m_GbNames, gui.m_GbComps, err, &gui.m_GbConds)) {
+                std::fprintf(stderr, "cannot read %s: %s\n", batch, err.c_str());
+                return 7;
+            }
+            gui.m_GbAutoRun = true;
+            frame();
+            t0 = std::chrono::steady_clock::now();
+            while (gui.m_GbFuture.valid()) {
+                frame();
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            for (int i = 0; i < 3; ++i) frame();
+            sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            report();
+            const auto &runs = gui.m_GbRuns;
+            const bool batch_ok = runs.size() == 4 && runs[0].fit3.estimated && std::fabs(runs[0].fit3.p_est - 377.3) < 1.0 &&
+                                  runs[1].settings.phases[2] == "orthopyroxene" && runs[1].settings.require_phase1 &&
+                                  runs[1].settings.p_start == 400.0 && runs[3].fo2_offset == 0.0 && runs[1].fo2_offset == -1.0;
+            if (status == 0 && !batch_ok) {
+                std::fprintf(stderr, "the rows of %s did not run with their own conditions\n", batch);
+                status = 8;
+            }
             gui.DestroyAssets();
         }
         glfwTerminate();
@@ -122,5 +155,6 @@ struct GeobarometerGuiTest {
 };
 
 int main(int argc, char **argv) {
-    return GeobarometerGuiTest::Run(argc > 1 ? argv[1] : "geobarometer_gui_test.ppm", 1600, 900);
+    return GeobarometerGuiTest::Run(argc > 1 ? argv[1] : "geobarometer_gui_test.ppm",
+                                    argc > 2 ? argv[2] : "../docs/conditions_template.csv", 1600, 900);
 }
