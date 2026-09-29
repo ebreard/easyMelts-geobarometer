@@ -456,7 +456,9 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
         int notes = 0;
         for (const auto &n : r.note)
             if (!n.empty()) ++notes;
-        ImGui::Text("%s", r.cancelled ? "stopped" : (notes ? (std::to_string(notes) + " (see values)").c_str() : ""));
+        std::string cell = r.cancelled ? std::string("stopped") : r.message;
+        if (!r.cancelled && notes) cell += (cell.empty() ? "" : " | ") + std::to_string(notes) + " (see values)";
+        ImGui::Text("%s", cell.c_str());
         ImGui::NextColumn();
     }
     ImGui::Columns(1);

@@ -316,15 +316,26 @@ std::vector<GeobarometerRun> Run(const GeobarometerSettings &s, const std::strin
     std::vector<double> offsets = s.fo2_offsets;
     if (offsets.empty() || s.fo2_path == FO2_NONE) offsets = {0.0};
 
-    // An fO2 buffer acts on FeO and Fe2O3; with neither, MELTS writes past the end of its constraint
-    // matrix (getEqualityConstraints), so such a melt is not calculated.
-    if (s.fo2_path != FO2_NONE && !(s.composition[3] > 0.0) && !(s.composition[5] > 0.0)) {
+    // Compositions MELTS cannot calculate get a row that says why. A negative amount of an oxide (a
+    // Monte Carlo draw below zero, for example) gives a liquid component a negative mole fraction, and
+    // no wet liquidus is found. An fO2 buffer acts on FeO and Fe2O3; with neither, MELTS writes past the
+    // end of its constraint matrix (getEqualityConstraints).
+    static const char *oxides[] = {"SiO2", "TiO2", "Al2O3", "Fe2O3", "Cr2O3", "FeO", "MnO", "MgO", "NiO", "CoO",
+                                   "CaO", "Na2O", "K2O", "P2O5", "H2O", "CO2", "SO3", "Cl2O-1", "F2O-1"};
+    std::string refused;
+    for (int i = 0; i < 19; ++i)
+        if (s.composition[i] < 0.0)
+            refused += std::string(refused.empty() ? "negative " : ", ") + oxides[i] + " (" + Fmt(s.composition[i], 3) + ")";
+    if (!refused.empty()) refused += " in the composition, not calculated";
+    else if (s.fo2_path != FO2_NONE && !(s.composition[3] > 0.0) && !(s.composition[5] > 0.0))
+        refused = "no FeO or Fe2O3: an fO2 buffer cannot be applied (choose buffer none), not calculated";
+    if (!refused.empty()) {
         for (double offset : offsets) {
             GeobarometerRun run;
             run.sample = sample;
             run.fo2_offset = offset;
             run.settings = s;
-            run.message = "no FeO or Fe2O3: an fO2 buffer cannot be applied (choose buffer none), not calculated";
+            run.message = refused;
             Evaluate(s, run);
             runs.push_back(run);
         }
@@ -336,6 +347,7 @@ std::vector<GeobarometerRun> Run(const GeobarometerSettings &s, const std::strin
         run.sample = sample;
         run.fo2_offset = offset;
         std::vector<std::map<std::string, double>> seen;
+        std::string first_failure; // note of the first pressure that gave no result
 
         for (double p : grid) {
             if (cancel && cancel->load()) {
@@ -346,7 +358,10 @@ std::vector<GeobarometerRun> Run(const GeobarometerSettings &s, const std::strin
             if (pressures_done) ++(*pressures_done);
             run.equilibrations += pr.steps;
             if (pr.cancelled) run.cancelled = true;
-            if (pr.steps == 0) continue; // MELTS_Excel keeps only pressures that returned results
+            if (pr.steps == 0) { // MELTS_Excel keeps only pressures that returned results
+                if (first_failure.empty()) first_failure = Fmt(p, 0) + " MPa: " + (pr.note.empty() ? std::string("path starts below T end") : pr.note);
+                continue;
+            }
             run.pressure.push_back(p);
             run.liquidus.push_back(pr.liquidus);
             std::array<double, 3> t{{kNaN, kNaN, kNaN}};
@@ -372,6 +387,8 @@ std::vector<GeobarometerRun> Run(const GeobarometerSettings &s, const std::strin
             run.all_tsat[name] = col;
         }
 
+        if (run.pressure.empty() && !run.cancelled)
+            run.message = "no result at any pressure" + (first_failure.empty() ? std::string() : " (first, " + first_failure + ")");
         run.settings = s;
         Evaluate(s, run);
         runs.push_back(run);
