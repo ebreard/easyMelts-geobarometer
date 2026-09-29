@@ -65,7 +65,10 @@ temperature at which each phase appears is used; untick it to follow every path 
 
 The summary notes flag pressures where the wet-liquidus search failed (the path then starts at
 the top of the temperature grid, as in MELTS_Excel), where MELTS failed part way down, or where
-a chosen phase was already present at the first step.
+a chosen phase was already present at the first step. A composition with a negative oxide (a
+Monte Carlo draw below zero, for example), or with an fO2 buffer but no FeO and no Fe2O3, is not
+calculated, and its row says why; a composition that gives no result at any pressure quotes the
+first failure.
 
 ## Checked against MELTS_Excel
 
