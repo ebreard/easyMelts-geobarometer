@@ -1,4 +1,4 @@
-/* Modified September 2026 by Eric C. P. Breard for the easyMelts geobarometer: skipOutputFiles switch, and calc_index < -1 resets the step machine. */
+/* Modified September 2026 by Eric C. P. Breard for the easyMelts geobarometer: skipOutputFiles switch, calc_index < -1 resets the step machine, and a step with more constraints than unknowns fails instead of crashing. */
 const char *silmin_ver(void) { return "$Id: silmin.c,v 1.12 2009/04/24 20:51:09 ghiorso Exp $"; }
 /*
  MELTS Source Code: RCS $Log: silmin.c,v $
@@ -924,6 +924,19 @@ int silmin(int calc_index)
 #ifdef DEBUG
             printf("\nMaking call to getProjGradientAndHessian(...) with conRows = %d and conCols = %d\n", conRows, conCols);
 #endif
+            /* More constraints than unknowns, e.g. once the liquid has been dropped and the solids left cannot
+               hold every oxide: the projection is undefined and getProjGradientAndHessian would read past its
+               matrices, so the step fails here. */
+            if (conRows > conCols) {
+#ifndef BATCH_VERSION
+                wprintf(statusEntries[STATUS_ADB_INDEX_STATUS].name, "...Fewer phase components than constraints. Aborting.\n");
+                workProcData->active = FALSE;
+#else
+                fprintf(stderr, "...Fewer phase components than constraints. Aborting.\n");
+                meltsStatus.status = SILMIN_RANK;
+#endif
+                iterQuad = 0; curStep = 0; return TRUE;
+            }
             hessianType = getProjGradientAndHessian(conRows, conCols, &eMatrix, &bMatrix, cMatrix, hVector, dVector, yVector);
 
 #ifndef BATCH_VERSION
