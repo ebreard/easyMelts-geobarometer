@@ -47,6 +47,7 @@ struct GeobarometerFit {
     double p_at_min = std::numeric_limits<double>::quiet_NaN();
     int index_at_min = -1;
     int n_fit = 0;
+    int index_lo = -1, index_hi = -1; // the parabola was fitted to the run's pressures index_lo..index_hi
     double a = std::numeric_limits<double>::quiet_NaN(); // residual = a P^2 + b P + c, P in MPa
     double b = std::numeric_limits<double>::quiet_NaN();
     double c = std::numeric_limits<double>::quiet_NaN();

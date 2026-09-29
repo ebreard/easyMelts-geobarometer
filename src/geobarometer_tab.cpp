@@ -83,9 +83,8 @@ void Series(const std::vector<double> &x, const std::vector<double> &y, std::vec
 void Parabola(const GeobarometerRun &r, const GeobarometerFit &f, std::vector<float> &xs, std::vector<float> &ys) {
     xs.clear();
     ys.clear();
-    if (!(std::isfinite(f.a) && f.a > 0.0) || f.index_at_min < 0) return;
-    const int n = (int)r.pressure.size();
-    double lo = r.pressure[std::max(f.index_at_min - 2, 0)], hi = r.pressure[std::min(f.index_at_min + 2, n - 1)];
+    if (!(std::isfinite(f.a) && f.a > 0.0) || f.index_lo < 0) return;
+    double lo = r.pressure[f.index_lo], hi = r.pressure[f.index_hi];
     if (lo > hi) std::swap(lo, hi);
     if (std::isfinite(f.p_est)) {
         lo = std::min(lo, f.p_est);
@@ -401,8 +400,9 @@ void ImGuiOpenGL::GeobarometerTab(int melts_version) {
                              : "Could not write " + base + "_summary.csv";
         }
         ImGui::SameLine();
-        Help("summary: one row per composition and fO2 offset (pressures, smallest residuals, phases). detail: saturation "
-             "temperatures, residuals and fitted parabolas at every pressure, plus every phase that appeared.");
+        Help("summary: one row per composition and fO2 offset (pressures, smallest residuals, the pressure range and "
+             "coefficients of each fitted parabola, phases). detail: saturation temperatures and residuals at every "
+             "pressure, the fitted parabolas at the pressures they were fitted to, plus every phase that appeared.");
     }
 
     ImGui::EndChild();

@@ -452,6 +452,8 @@ GeobarometerFit FitResidual(const std::vector<double> &p, const std::vector<doub
         if (!std::isfinite(r[i])) return f; // a gap in the window: the spreadsheet fit fails too
     f.n_fit = hi - lo + 1;
     if (f.n_fit < 3) return f;
+    f.index_lo = lo;
+    f.index_hi = hi;
 
     // Least squares y = A u^2 + B u + C on centred, scaled pressures u = (P - m) / h
     double m = 0.0;
@@ -586,6 +588,14 @@ std::string AsciiMinus(std::string v) {
 std::string Csv(double v, int prec = 2) {
     if (!std::isfinite(v)) return "";
     return Fmt(v, prec);
+}
+
+// Parabola coefficients need significant digits rather than decimals (a is of order 1e-4 C/MPa^2).
+std::string CsvSig(double v, int digits = 10) {
+    if (!std::isfinite(v)) return "";
+    std::ostringstream o;
+    o << std::setprecision(digits) << v;
+    return o.str();
 }
 
 std::string Quote(const std::string &s) {
@@ -777,7 +787,9 @@ namespace {
 
 void SummaryHeader(std::ostream &o) {
     o << "sample,fO2_offset,P_3phase_MPa,min_dT_3phase_C,P_at_min_3phase_MPa,points_3phase,"
+         "fit_P_min_3phase_MPa,fit_P_max_3phase_MPa,fit_a_3phase,fit_b_3phase,fit_c_3phase,"
          "P_2phase_MPa,min_dT_2phase_C,P_at_min_2phase_MPa,points_2phase,phases_2phase,"
+         "fit_P_min_2phase_MPa,fit_P_max_2phase_MPa,fit_a_2phase,fit_b_2phase,fit_c_2phase,"
          "phase1,phase2,phase3,two_phase_rule,threshold_C,"
          "P_start_MPa,P_end_MPa,P_step_MPa,T_start_C,T_end_C,T_step_C,fO2_buffer,equilibrations,notes\n";
 }
@@ -789,16 +801,24 @@ void SummaryRows(std::ostream &o, const std::vector<GeobarometerRun> &runs) {
         for (size_t i = 0; i < r.note.size(); ++i)
             if (!r.note[i].empty()) notes += std::string(notes.empty() ? "" : " | ") + Fmt(r.pressure[i], 0) + " MPa: " + r.note[i];
         if (r.cancelled) notes = "stopped by user" + std::string(notes.empty() ? "" : " | ") + notes;
-        if (r.fit2.estimated && r.fit2.index_at_min >= 0 && r.fit2.n_fit > 0) {
-            const double lo = std::min(r.pressure[std::max(r.fit2.index_at_min - 2, 0)], r.pressure[std::min(r.fit2.index_at_min + 2, (int)r.pressure.size() - 1)]);
-            const double hi = std::max(r.pressure[std::max(r.fit2.index_at_min - 2, 0)], r.pressure[std::min(r.fit2.index_at_min + 2, (int)r.pressure.size() - 1)]);
+        if (r.fit2.estimated && r.fit2.index_lo >= 0) {
+            const double lo = std::min(r.pressure[r.fit2.index_lo], r.pressure[r.fit2.index_hi]);
+            const double hi = std::max(r.pressure[r.fit2.index_lo], r.pressure[r.fit2.index_hi]);
             if (r.fit2.p_est < lo || r.fit2.p_est > hi) notes += std::string(notes.empty() ? "" : " | ") + "2-phase vertex outside the fitted points";
         }
+        // pressure range of the points each parabola was fitted to, and its coefficients
+        // (residual in C = a P^2 + b P + c, P in MPa), so that every curve can be redrawn
+        auto fit_columns = [&](const GeobarometerFit &f) {
+            if (!std::isfinite(f.a) || f.index_lo < 0) return std::string(",,,,");
+            const double p1 = r.pressure[f.index_lo], p2 = r.pressure[f.index_hi];
+            return Csv(std::min(p1, p2), 1) + "," + Csv(std::max(p1, p2), 1) + "," + CsvSig(f.a) + "," + CsvSig(f.b) + "," + CsvSig(f.c);
+        };
         o << Quote(r.sample) << "," << Csv(r.fo2_offset, 3) << ","
           << (r.fit3.estimated ? Csv(r.fit3.p_est, 1) : "") << "," << Csv(r.fit3.min_residual, 2) << ","
-          << Csv(r.fit3.p_at_min, 1) << "," << r.fit3.n_fit << ","
+          << Csv(r.fit3.p_at_min, 1) << "," << r.fit3.n_fit << "," << fit_columns(r.fit3) << ","
           << (r.fit2.estimated ? Csv(r.fit2.p_est, 1) : "") << "," << Csv(r.fit2.min_residual, 2) << ","
           << Csv(r.fit2.p_at_min, 1) << "," << r.fit2.n_fit << "," << Quote(r.fit2.phases_at_min) << ","
+          << fit_columns(r.fit2) << ","
           << Quote(rs.phases[0]) << "," << Quote(rs.phases[1]) << "," << Quote(rs.phases[2]) << ","
           << (rs.require_phase1 ? "require phase 1" : "any two phases") << "," << Csv(rs.threshold, 1) << ","
           << Csv(rs.p_start, 1) << "," << Csv(rs.p_end, 1) << "," << Csv(rs.p_step, 1) << "," << Csv(rs.t_start, 1) << ","
@@ -888,8 +908,9 @@ bool WriteDetailCSV(const std::string &path, const GeobarometerSettings &s, cons
     for (const auto &r : runs) {
         for (size_t i = 0; i < r.pressure.size(); ++i) {
             const double p = r.pressure[i];
-            auto fitv = [&](const GeobarometerFit &f) {
-                return std::isfinite(f.a) && f.a > 0.0 ? f.a * p * p + f.b * p + f.c : kNaN;
+            auto fitv = [&](const GeobarometerFit &f) { // only at the pressures the parabola was fitted to
+                return std::isfinite(f.a) && f.a > 0.0 && (int)i >= f.index_lo && (int)i <= f.index_hi
+                           ? f.a * p * p + f.b * p + f.c : kNaN;
             };
             o << Quote(r.sample) << "," << Csv(r.fo2_offset, 3) << ",";
             if (mixed) o << Quote(r.settings.phases[0]) << "," << Quote(r.settings.phases[1]) << "," << Quote(r.settings.phases[2]) << ",";
